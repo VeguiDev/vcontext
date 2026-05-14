@@ -2,17 +2,22 @@
   "name": "@app/deamon",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/index.ts --include src/**/*.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.14",
-    "hono": "^4.12.18"
+    "better-sqlite3": "^12.10.0",
+    "fast-glob": "^3.3.3",
+    "hono": "^4.12.18",
+    "slugify": "^1.6.9",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.17",
-    "tsx": "^4.7.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3"
   }
 }
