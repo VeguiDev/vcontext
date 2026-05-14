@@ -5,21 +5,39 @@ import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { createApp } from "./app.js";
 import { RegistryStore } from "./storage/registry-store.js";
 import { ProjectStore } from "./storage/project-store.js";
+import { removePid, runningPid, writePid } from "./runtime/pid.js";
 
 export class AppBoostrap {
   private registry = new RegistryStore();
 
-  Project(id: number) {
-    const project = this.registry.findById(id);
+  Project(slug: string) {
+    const project = this.registry.findBySlug(slug);
     return project ? new ProjectStore(project) : null;
   }
 
   bootstrap() {
+    const activePid = runningPid();
+
+    if (activePid) {
+      throw new Error(`vcontext daemon is already running with PID ${activePid}`);
+    }
+
+    let server: ReturnType<typeof createServer>;
     const app = createApp({
       registry: this.registry,
-      Project: (id) => this.Project(id),
+      Project: (slug) => this.Project(slug),
+      pid: process.pid,
+      shutdown: () => {
+        setTimeout(() => {
+          server.close(() => {
+            removePid();
+            process.exit(0);
+          });
+        }, 10);
+      },
     });
-    const server = createServer(async (req, res) => {
+
+    server = createServer(async (req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
       const method = req.method ?? "GET";
       const body = await readBody(req);
@@ -43,12 +61,26 @@ export class AppBoostrap {
       mkdirSync(dirname(socket), { recursive: true });
     }
 
-    if (existsSync(socket)) {
+    if (process.platform !== "win32" && existsSync(socket)) {
       unlinkSync(socket);
     }
 
     server.listen(socket, () => {
+      writePid();
       console.log("Listening on " + socket);
+      console.log("PID " + process.pid);
+    });
+
+    const cleanup = () => removePid();
+
+    process.once("exit", cleanup);
+    process.once("SIGINT", () => {
+      cleanup();
+      process.exit(0);
+    });
+    process.once("SIGTERM", () => {
+      cleanup();
+      process.exit(0);
     });
   }
 }

@@ -11,9 +11,20 @@ export function migrateRegistry(db: Database) {
       slug TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
-      local_path TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS project_path (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('local', 'remote')),
+      path TEXT NOT NULL,
+      label TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(project_id, type, path),
+      FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS project_link (
@@ -28,7 +39,6 @@ export function migrateRegistry(db: Database) {
   `);
 
   addColumnIfMissing(db, "project", "uuid", "TEXT");
-  addColumnIfMissing(db, "project", "local_path", "TEXT");
 }
 
 export function migrateProject(db: Database) {

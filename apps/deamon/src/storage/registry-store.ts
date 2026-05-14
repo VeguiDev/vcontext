@@ -16,7 +16,18 @@ export interface RegisteredProject {
   slug: string;
   name: string;
   description: string | null;
-  local_path: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export type ProjectPathType = "local" | "remote";
+
+export interface ProjectPathRecord {
+  id: number;
+  project_id: number;
+  type: ProjectPathType;
+  path: string;
+  label: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -24,7 +35,6 @@ export interface RegisteredProject {
 export interface CreateProjectInput {
   name: string;
   description?: string;
-  local_path?: string;
 }
 
 export class RegistryStore {
@@ -66,8 +76,8 @@ export class RegistryStore {
 
     const project = this.db
       .prepare(
-        `INSERT INTO project (uuid, slug, name, description, local_path, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO project (uuid, slug, name, description, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          RETURNING *`,
       )
       .get(
@@ -75,7 +85,6 @@ export class RegistryStore {
         slug,
         input.name,
         input.description ?? null,
-        input.local_path ?? null,
         now,
         now,
       ) as RegisteredProject;
@@ -83,6 +92,70 @@ export class RegistryStore {
     fs.mkdirSync(projectRoot(project.slug), { recursive: true });
 
     return project;
+  }
+
+  addPath(
+    slug: string,
+    input: { type: ProjectPathType; path: string; label?: string | null },
+  ) {
+    const project = this.findBySlug(slug);
+
+    if (!project) {
+      return null;
+    }
+
+    const now = Date.now();
+
+    return this.db
+      .prepare(
+        `INSERT INTO project_path (
+          project_id, type, path, label, created_at, updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(project_id, type, path) DO UPDATE SET
+           label = excluded.label,
+           updated_at = excluded.updated_at
+         RETURNING *`,
+      )
+      .get(
+        project.id,
+        input.type,
+        input.path,
+        input.label ?? null,
+        now,
+        now,
+      ) as ProjectPathRecord;
+  }
+
+  paths(slug: string) {
+    const project = this.findBySlug(slug);
+
+    if (!project) {
+      return null;
+    }
+
+    return this.db
+      .prepare(
+        `SELECT *
+         FROM project_path
+         WHERE project_id = ?
+         ORDER BY type ASC, path ASC`,
+      )
+      .all(project.id) as ProjectPathRecord[];
+  }
+
+  findByPath(type: ProjectPathType, value: string) {
+    return (
+      (this.db
+        .prepare(
+          `SELECT project.*
+           FROM project_path
+           JOIN project ON project.id = project_path.project_id
+           WHERE project_path.type = ? AND project_path.path = ?
+           LIMIT 1`,
+        )
+        .get(type, value) as RegisteredProject | undefined) ?? null
+    );
   }
 
   link(projectId: number, projectBId: number) {
@@ -110,6 +183,16 @@ export class RegistryStore {
          ORDER BY linked.name ASC`,
       )
       .all(projectId) as RegisteredProject[];
+  }
+
+  linksBySlug(slug: string) {
+    const project = this.findBySlug(slug);
+
+    if (!project) {
+      return null;
+    }
+
+    return this.links(project.id);
   }
 
   private nextSlug(name: string) {
