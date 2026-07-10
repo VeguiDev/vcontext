@@ -7,7 +7,7 @@ export function renderProjectContext(project: ProjectStore) {
   const tasks = project.task
     .find()
     .filter((task) => task.status !== "COMPLETED" && task.status !== "CANCELLED");
-  const files = project.fileContext.find();
+  const pathContexts = project.fileContext.find();
 
   return [
     `Project: ${project.project.name}`,
@@ -16,9 +16,9 @@ export function renderProjectContext(project: ProjectStore) {
     "How to use this context:",
     "- This tool stores durable context for you and for other agents working on the same project.",
     "- Treat documents as project-level memory written for AI agents.",
-    "- Treat file context as a summary of files in the local repository.",
+    "- Treat path context as a summary of relevant files or directories in the local repository.",
     "- Use documents to explain architecture, workflows, decisions, and important areas of the repo.",
-    "- Use file context to describe relevant files or directories when that helps future navigation.",
+    "- Use path context to describe relevant files or directories when that helps future navigation.",
     "- When you start or continue work, create or update tasks so other agents can see current intent.",
     "- When you make meaningful changes, add a change note and update stale documents.",
     "- Write context in the language that is most useful for future agents. It can be concise English and does not need to read like human-facing documentation.",
@@ -32,7 +32,7 @@ export function renderProjectContext(project: ProjectStore) {
     `- List active tasks: vcontext task list ${project.project.slug}`,
     `- Add a task: vcontext task add ${project.project.slug} --title "Task title" --description "Task details"`,
     `- Add a change note: vcontext change add ${project.project.slug} --note "What changed"`,
-    `- Upsert file context: vcontext file-context upsert ${project.project.slug} --filename "file.ts" --path "relative/file.ts" --hash "sha256" --description "What this file does"`,
+    `- Upsert path context: vcontext file-context upsert ${project.project.slug} --path "relative/path" --kind directory --description "What this path contains"`,
     "",
     "Project prompts:",
     prompts.length === 0
@@ -62,9 +62,11 @@ export function renderProjectContext(project: ProjectStore) {
           .map((doc) => [`## ${doc.title}`, doc.content.trim()].join("\n"))
           .join("\n\n"),
     "",
-    "File context:",
-    files.length === 0
-      ? "- No file context yet."
-      : files.map((file) => `- ${file.path}: ${file.description}`).join("\n"),
+    "Path context:",
+    pathContexts.length === 0
+      ? "- No path context yet."
+      : pathContexts
+          .map((entry) => `- [${entry.kind}] ${entry.path}: ${entry.description}`)
+          .join("\n"),
   ].join("\n");
 }

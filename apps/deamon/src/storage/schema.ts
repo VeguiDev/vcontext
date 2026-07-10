@@ -82,9 +82,10 @@ export function migrateProject(db: Database) {
 
     CREATE TABLE IF NOT EXISTS file_context (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      filename TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'file' CHECK(kind IN ('file', 'directory', 'path')),
+      filename TEXT,
       path TEXT NOT NULL UNIQUE,
-      hash TEXT NOT NULL,
+      hash TEXT,
       description TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -92,6 +93,7 @@ export function migrateProject(db: Database) {
   `);
 
   addColumnIfMissing(db, "task", "description", "TEXT");
+  addColumnIfMissing(db, "file_context", "kind", "TEXT NOT NULL DEFAULT 'file'");
 }
 
 function addColumnIfMissing(db: Database, table: string, column: string, type: string) {

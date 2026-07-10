@@ -13,13 +13,16 @@ export function registerProjectContextRoutes(app: Hono, services: AppServices) {
     const accept = c.req.header("accept") ?? "";
 
     if (accept.includes("application/json")) {
+      const pathContext = project.fileContext.find();
+
       return c.json({
         project: project.project,
         prompts: project.prompt.find(),
         documents: project.document.find(),
         changes: project.change.find(),
         tasks: project.task.find(),
-        file_context: project.fileContext.find(),
+        path_context: pathContext,
+        file_context: pathContext,
       });
     }
 

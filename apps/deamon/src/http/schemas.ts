@@ -65,9 +65,10 @@ export const UpdateTaskSchema = z.object({
 });
 
 export const UpsertFileContextSchema = z.object({
-  filename: z.string().min(1),
   path: z.string().min(1),
-  hash: z.string().min(1),
+  kind: z.enum(["file", "directory", "path"]).optional(),
+  filename: z.string().min(1).optional(),
+  hash: z.string().min(1).optional(),
   description: z.string(),
 });
 

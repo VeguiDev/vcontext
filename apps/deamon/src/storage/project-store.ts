@@ -40,6 +40,7 @@ export interface TaskRecord {
 
 export interface FileContextRecord {
   id: number;
+  kind: "file" | "directory" | "path";
   filename: string;
   path: string;
   hash: string;
@@ -266,25 +267,39 @@ export class ProjectStore {
   fileContext = {
     find: () => {
       return this.db
-        .prepare("SELECT * FROM file_context ORDER BY path ASC")
+        .prepare(
+          `SELECT id,
+                  kind,
+                  filename,
+                  path,
+                  hash,
+                  description,
+                  created_at,
+                  updated_at
+           FROM file_context
+           ORDER BY path ASC`,
+        )
         .all() as FileContextRecord[];
     },
 
     upsert: (input: {
-      filename: string;
       path: string;
-      hash: string;
+      kind?: "file" | "directory" | "path";
+      filename?: string;
+      hash?: string;
       description: string;
     }) => {
       const now = Date.now();
+      const filename = input.filename ?? nameFromPath(input.path);
 
       return this.db
         .prepare(
           `INSERT INTO file_context (
-            filename, path, hash, description, created_at, updated_at
+            kind, filename, path, hash, description, created_at, updated_at
            )
-           VALUES (?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(path) DO UPDATE SET
+             kind = excluded.kind,
              filename = excluded.filename,
              hash = excluded.hash,
              description = excluded.description,
@@ -292,9 +307,10 @@ export class ProjectStore {
            RETURNING *`,
         )
         .get(
-          input.filename,
+          input.kind ?? "path",
+          filename,
           input.path,
-          input.hash,
+          input.hash ?? "",
           input.description,
           now,
           now,
@@ -306,4 +322,11 @@ export class ProjectStore {
         .changes > 0;
     },
   };
+}
+
+function nameFromPath(value: string) {
+  const trimmed = value.replace(/[\\/]+$/, "");
+  const name = trimmed.split(/[\\/]/).pop();
+
+  return name && name.length > 0 ? name : value;
 }

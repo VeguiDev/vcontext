@@ -66,6 +66,8 @@ async function main(input: string[]) {
       return task(input);
     case "change":
       return change(input);
+    case "path-context":
+    case "path":
     case "file-context":
     case "file":
       return fileContext(input);
@@ -293,13 +295,15 @@ async function fileContext(input: string[]) {
     case "list":
       return printJson(await request("GET", `/projects/${slug}/file-context`));
     case "upsert": {
-      const filename = requiredOption(input, "--filename");
       const filePath = requiredOption(input, "--path");
-      const hash = requiredOption(input, "--hash");
+      const kind = takeOption(input, "--kind");
+      const filename = takeOption(input, "--filename");
+      const hash = takeOption(input, "--hash");
       const description = requiredOption(input, "--description");
 
       return printJson(
         await request("POST", `/projects/${slug}/file-context`, {
+          kind,
           filename,
           path: filePath,
           hash,
@@ -536,5 +540,5 @@ Usage:
   vcontext change list [project-slug]
   vcontext change add [project-slug] --note note [--document-id id]
   vcontext file-context list [project-slug]
-  vcontext file-context upsert [project-slug] --filename name --path path --hash hash --description text`);
+  vcontext file-context upsert [project-slug] --path path --description text [--kind file|directory|path] [--hash hash]`);
 }
