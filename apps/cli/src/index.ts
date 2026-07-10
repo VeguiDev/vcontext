@@ -233,7 +233,7 @@ async function document(input: string[]) {
       );
     }
     default:
-      throw new CliError("Usage: vcontext doc <list|add> <project-id>");
+      throw new CliError("Usage: vcontext doc <list|add> [project-slug]");
   }
 }
 
@@ -258,7 +258,7 @@ async function task(input: string[]) {
       );
     }
     default:
-      throw new CliError("Usage: vcontext task <list|add> <project-id>");
+      throw new CliError("Usage: vcontext task <list|add> [project-slug]");
   }
 }
 
@@ -281,7 +281,7 @@ async function change(input: string[]) {
       );
     }
     default:
-      throw new CliError("Usage: vcontext change <list|add> <project-id>");
+      throw new CliError("Usage: vcontext change <list|add> [project-slug]");
   }
 }
 
@@ -308,7 +308,7 @@ async function fileContext(input: string[]) {
       );
     }
     default:
-      throw new CliError("Usage: vcontext file-context <list|upsert> <project-id>");
+      throw new CliError("Usage: vcontext file-context <list|upsert> [project-slug]");
   }
 }
 
@@ -504,15 +504,16 @@ function parseCliId(value: string | undefined, label: string) {
 function daemonEntry() {
   const currentFile = fileURLToPath(import.meta.url);
   const currentDir = path.dirname(currentFile);
+  const candidates = [
+    process.env.VCONTEXT_DAEMON_ENTRY,
+    path.resolve(currentDir, "..", "..", "..", "deamon", "dist", "src", "index.js"),
+    path.resolve(currentDir, "..", "..", "deamon", "dist", "src", "index.js"),
+  ].filter((candidate): candidate is string => Boolean(candidate));
 
-  if (currentFile.endsWith(".js")) {
-    return path.join(currentDir, "index.js");
-  }
-
-  const compiledEntry = path.resolve(currentDir, "..", "dist", "src", "index.js");
-
-  if (fs.existsSync(compiledEntry)) {
-    return compiledEntry;
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
 
   throw new CliError("Build the daemon before starting it: pnpm --filter @app/deamon build");

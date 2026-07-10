@@ -1,12 +1,8 @@
 {
   "name": "@app/deamon",
   "type": "module",
-  "bin": {
-    "vcontext": "./dist/src/cli.js"
-  },
   "scripts": {
     "dev": "tsx watch src/index.ts --include src/**/*.ts",
-    "cli": "tsx src/cli.ts",
     "build": "tsc",
     "start": "node dist/src/index.js"
   },

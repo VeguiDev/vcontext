@@ -1,0 +1,17 @@
+{
+  "name": "@app/cli",
+  "type": "module",
+  "bin": {
+    "vcontext": "./dist/src/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/src/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "tsx": "^4.21.0",
+    "typescript": "^5.8.3"
+  }
+}
