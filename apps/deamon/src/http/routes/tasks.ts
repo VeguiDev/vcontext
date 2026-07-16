@@ -5,7 +5,7 @@ import {
   parseId,
   TaskStatusSchema,
   UpdateTaskSchema,
-} from "../schemas.js";
+} from "@repo/vcontext-mcp";
 
 export function registerTaskRoutes(app: Hono, services: AppServices) {
   app.get("/projects/:slug/tasks", (c) => {

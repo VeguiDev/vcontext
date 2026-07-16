@@ -9,6 +9,12 @@
     "build": "tsc",
     "start": "node dist/src/index.js"
   },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@repo/daemon-client": "workspace:^",
+    "@repo/vcontext-core": "workspace:^",
+    "@repo/vcontext-mcp": "workspace:^"
+  },
   "devDependencies": {
     "@types/node": "^20.11.17",
     "tsx": "^4.21.0",

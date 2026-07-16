@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import type { AppServices } from "../../app.js";
-import { CreateChangeSchema } from "../schemas.js";
+import { CreateChangeSchema } from "@repo/vcontext-mcp";
 
 export function registerChangeRoutes(app: Hono, services: AppServices) {
   app.get("/projects/:slug/changes", (c) => {

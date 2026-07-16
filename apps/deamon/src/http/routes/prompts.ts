@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import type { AppServices } from "../../app.js";
-import { parseId, ProjectPromptSchema } from "../schemas.js";
+import { parseId, ProjectPromptSchema } from "@repo/vcontext-mcp";
 
 export function registerPromptRoutes(app: Hono, services: AppServices) {
   app.get("/projects/:slug/prompts", (c) => {

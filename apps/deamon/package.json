@@ -8,6 +8,9 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.14",
+    "@modelcontextprotocol/sdk": "^1.13.0",
+    "@repo/vcontext-core": "workspace:^",
+    "@repo/vcontext-mcp": "workspace:^",
     "better-sqlite3": "^12.10.0",
     "fast-glob": "^3.3.3",
     "hono": "^4.12.18",

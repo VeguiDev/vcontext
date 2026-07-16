@@ -1,44 +1,34 @@
 #!/usr/bin/env node
-import http from "node:http";
-import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { getSocketPath } from "./util/pipe.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  type CliResponse,
+  DaemonClientError,
+  ensureDaemon,
+  rawRequest,
+  request,
+} from "@repo/daemon-client";
+import {
+  isProcessRunning,
+  readPid,
+  readPort,
+  removeStalePid,
+} from "@repo/vcontext-core";
+import { buildMcp } from "@repo/vcontext-mcp";
+import { acquireLease, releaseLease, startHeartbeat } from "./lease.js";
 import { gitRemoteUrl } from "./runtime/git.js";
 import {
   findProjectMarker,
   writeProjectMarker,
 } from "./runtime/project-marker.js";
-import {
-  PID_FILE,
-  isProcessRunning,
-  readPid,
-  removeStalePid,
-  runningPid,
-} from "./runtime/pid.js";
-
-interface CliResponse {
-  status: number;
-  headers: http.IncomingHttpHeaders;
-  body: string;
-}
-
-class CliError extends Error {
-  constructor(
-    message: string,
-    readonly exitCode = 1,
-  ) {
-    super(message);
-  }
-}
+import { CLIVContextAPI } from "./vcontext-api.js";
 
 const args = process.argv.slice(2);
 
 try {
   await main(args);
 } catch (error) {
-  if (error instanceof CliError) {
+  if (error instanceof DaemonClientError) {
     console.error(error.message);
     process.exit(error.exitCode);
   }
@@ -59,6 +49,8 @@ async function main(input: string[]) {
       return printJson(await request("GET", "/projects"));
     case "give-context":
       return giveContext(input);
+    case "mcp":
+      return input[0] === "serve" ? mcpServe() : mcpBridge();
     case "doc":
     case "document":
       return document(input);
@@ -76,7 +68,7 @@ async function main(input: string[]) {
     case undefined:
       return usage();
     default:
-      throw new CliError(`Unknown command: ${command}`);
+      throw new DaemonClientError(`Unknown command: ${command}`);
   }
 }
 
@@ -91,29 +83,12 @@ async function daemon(input: string[]) {
     case "stop":
       return daemonStop();
     default:
-      throw new CliError("Usage: vcontext daemon <start|status|stop>");
+      throw new DaemonClientError("Usage: vcontext daemon <start|status|stop>");
   }
 }
 
-function daemonStart() {
-  const pid = runningPid();
-
-  if (pid) {
-    console.log(`vcontext daemon is already running with PID ${pid}`);
-    return;
-  }
-
-  const entry = daemonEntry();
-  const child = spawn(process.execPath, [entry], {
-    detached: true,
-    stdio: "ignore",
-    env: process.env,
-  });
-
-  child.unref();
-
-  console.log(`vcontext daemon starting with PID ${child.pid}`);
-  console.log(`PID file: ${PID_FILE}`);
+async function daemonStart() {
+  await ensureDaemon();
 }
 
 async function daemonStatus() {
@@ -132,7 +107,7 @@ async function daemonStatus() {
   }
 
   try {
-    const response = await request("GET", "/daemon/status");
+    const response = await rawRequest("GET", "/daemon/status");
     const status = parseJson<{ pid: number }>(response);
 
     console.log(`vcontext daemon is running with PID ${status.pid}`);
@@ -152,7 +127,7 @@ async function daemonStop() {
   }
 
   try {
-    await request("POST", "/daemon/stop");
+    await rawRequest("POST", "/daemon/stop");
     console.log(`vcontext daemon stopping with PID ${pid}`);
     return;
   } catch {
@@ -167,7 +142,9 @@ async function init(input: string[]) {
   const localPath = path.resolve(takeOption(input, "--path") ?? process.cwd());
 
   if (!name) {
-    throw new CliError("Usage: vcontext init <project name> [--description text] [--path path]");
+    throw new DaemonClientError(
+      "Usage: vcontext init <project name> [--description text] [--path path]",
+    );
   }
 
   const remote = gitRemoteUrl(localPath);
@@ -204,9 +181,14 @@ async function init(input: string[]) {
 async function giveContext(input: string[]) {
   const slug = await resolveProjectSlug(input);
   const json = takeFlag(input, "--json");
-  const response = await request("GET", `/projects/${slug}/context`, undefined, {
-    accept: json ? "application/json" : "text/plain",
-  });
+  const response = await request(
+    "GET",
+    `/projects/${slug}/context`,
+    undefined,
+    {
+      accept: json ? "application/json" : "text/plain",
+    },
+  );
 
   if (json) {
     printJson(response);
@@ -235,7 +217,9 @@ async function document(input: string[]) {
       );
     }
     default:
-      throw new CliError("Usage: vcontext doc <list|add> [project-slug]");
+      throw new DaemonClientError(
+        "Usage: vcontext doc <list|add> [project-slug]",
+      );
   }
 }
 
@@ -260,7 +244,9 @@ async function task(input: string[]) {
       );
     }
     default:
-      throw new CliError("Usage: vcontext task <list|add> [project-slug]");
+      throw new DaemonClientError(
+        "Usage: vcontext task <list|add> [project-slug]",
+      );
   }
 }
 
@@ -278,12 +264,16 @@ async function change(input: string[]) {
       return printJson(
         await request("POST", `/projects/${slug}/changes`, {
           note,
-          document_id: documentId ? parseCliId(documentId, "document id") : undefined,
+          document_id: documentId
+            ? parseCliId(documentId, "document id")
+            : undefined,
         }),
       );
     }
     default:
-      throw new CliError("Usage: vcontext change <list|add> [project-slug]");
+      throw new DaemonClientError(
+        "Usage: vcontext change <list|add> [project-slug]",
+      );
   }
 }
 
@@ -312,12 +302,15 @@ async function fileContext(input: string[]) {
       );
     }
     default:
-      throw new CliError("Usage: vcontext file-context <list|upsert> [project-slug]");
+      throw new DaemonClientError(
+        "Usage: vcontext file-context <list|upsert> [project-slug]",
+      );
   }
 }
 
 async function resolveProjectSlug(input: string[]) {
-  const explicit = takeOption(input, "--project") ?? takeOption(input, "--slug");
+  const explicit =
+    takeOption(input, "--project") ?? takeOption(input, "--slug");
 
   if (explicit) {
     return explicit;
@@ -339,7 +332,7 @@ async function resolveProjectSlug(input: string[]) {
     return currentProject.slug;
   }
 
-  throw new CliError(
+  throw new DaemonClientError(
     "Could not resolve project. Run inside a vcontext project or pass --project <slug>.",
   );
 }
@@ -369,86 +362,12 @@ async function resolveProjectByCurrentPath() {
   }
 }
 
-function request(
-  method: string,
-  requestPath: string,
-  body?: unknown,
-  headers: Record<string, string> = {},
-) {
-  return new Promise<CliResponse>((resolve, reject) => {
-    const payload = body === undefined ? undefined : JSON.stringify(body);
-    const req = http.request(
-      {
-        socketPath: getSocketPath(),
-        path: requestPath,
-        method,
-        headers: {
-          ...headers,
-          ...(payload
-            ? {
-                "content-type": "application/json",
-                "content-length": Buffer.byteLength(payload).toString(),
-              }
-            : {}),
-        },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-
-        res.on("data", (chunk) => {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        });
-        res.on("end", () => {
-          const response = {
-            status: res.statusCode ?? 0,
-            headers: res.headers,
-            body: Buffer.concat(chunks).toString("utf-8"),
-          };
-
-          if (response.status >= 400) {
-            reject(new CliError(formatApiError(response), 1));
-            return;
-          }
-
-          resolve(response);
-        });
-      },
-    );
-
-    req.on("error", () => {
-      reject(
-        new CliError(
-          "Could not connect to vcontext daemon. Run `vcontext daemon start` first.",
-          1,
-        ),
-      );
-    });
-
-    if (payload) {
-      req.write(payload);
-    }
-
-    req.end();
-  });
-}
-
 function printJson(response: CliResponse) {
   console.log(JSON.stringify(parseJson(response), null, 2));
 }
 
 function parseJson<T = unknown>(response: CliResponse) {
   return JSON.parse(response.body) as T;
-}
-
-function formatApiError(response: CliResponse) {
-  try {
-    const parsed = JSON.parse(response.body) as { error?: string };
-    return parsed.error
-      ? `API error ${response.status}: ${parsed.error}`
-      : `API error ${response.status}`;
-  } catch {
-    return `API error ${response.status}: ${response.body}`;
-  }
 }
 
 function collectName(input: string[]) {
@@ -478,7 +397,7 @@ function requiredOption(input: string[], name: string) {
   const value = takeOption(input, name);
 
   if (!value) {
-    throw new CliError(`Missing required option ${name}`);
+    throw new DaemonClientError(`Missing required option ${name}`);
   }
 
   return value;
@@ -499,28 +418,70 @@ function parseCliId(value: string | undefined, label: string) {
   const id = Number(value);
 
   if (!Number.isInteger(id) || id <= 0) {
-    throw new CliError(`Invalid ${label}`);
+    throw new DaemonClientError(`Invalid ${label}`);
   }
 
   return id;
 }
 
-function daemonEntry() {
-  const currentFile = fileURLToPath(import.meta.url);
-  const currentDir = path.dirname(currentFile);
-  const candidates = [
-    process.env.VCONTEXT_DAEMON_ENTRY,
-    path.resolve(currentDir, "..", "..", "..", "deamon", "dist", "src", "index.js"),
-    path.resolve(currentDir, "..", "..", "deamon", "dist", "src", "index.js"),
-  ].filter((candidate): candidate is string => Boolean(candidate));
+async function mcpBridge() {
+  await ensureDaemon();
+  const leaseId = await acquireLease();
+  const heartbeat = startHeartbeat(leaseId);
 
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
+  const cleanup = async () => {
+    clearInterval(heartbeat);
+    await releaseLease(leaseId);
+  };
+
+  process.once("SIGINT", () => {
+    cleanup().then(() => process.exit(0));
+  });
+  process.once("SIGTERM", () => {
+    cleanup().then(() => process.exit(0));
+  });
+
+  const api = new CLIVContextAPI();
+  await serveStdio(() => buildMcp(api));
+
+  await cleanup();
+  process.exit(0);
+}
+
+async function serveStdio(createServer: () => ReturnType<typeof buildMcp>) {
+  const server = createServer();
+  await server.connect(new StdioServerTransport());
+  await new Promise<void>((resolve) => process.stdin.once("end", resolve));
+  await server.close();
+}
+
+async function mcpServe() {
+  await ensureDaemon();
+  const leaseId = await acquireLease();
+  const heartbeat = startHeartbeat(leaseId);
+
+  const cleanup = async () => {
+    clearInterval(heartbeat);
+    await releaseLease(leaseId);
+  };
+
+  process.once("SIGINT", () => {
+    cleanup().then(() => process.exit(0));
+  });
+  process.once("SIGTERM", () => {
+    cleanup().then(() => process.exit(0));
+  });
+
+  const port = readPort();
+  if (!port) {
+    console.error("vcontext: daemon port not found");
+    process.exit(1);
   }
 
-  throw new CliError("Build the daemon before starting it: pnpm --filter @app/deamon build");
+  console.log(`MCP endpoint: http://127.0.0.1:${port}/mcp`);
+  console.log("Stop with: vcontext daemon stop");
+
+  await new Promise(() => {});
 }
 
 function usage() {
@@ -533,6 +494,8 @@ Usage:
   vcontext init <project name> [--description text] [--path path]
   vcontext projects
   vcontext give-context [project-slug] [--json]
+  vcontext mcp
+  vcontext mcp serve
   vcontext doc list [project-slug]
   vcontext doc add [project-slug] --title title --content content
   vcontext task list [project-slug]

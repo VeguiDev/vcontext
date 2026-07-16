@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import type { AppServices } from "../../app.js";
-import { parseId, UpsertFileContextSchema } from "../schemas.js";
+import { parseId, UpsertFileContextSchema } from "@repo/vcontext-mcp";
 
 export function registerFileContextRoutes(app: Hono, services: AppServices) {
   app.get("/projects/:slug/file-context", (c) => {

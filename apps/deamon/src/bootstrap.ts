@@ -1,11 +1,16 @@
 import { createServer } from "node:http";
-import { getSocketPath } from "./util/pipe.js";
-import { dirname } from "node:path";
-import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { createApp } from "./app.js";
 import { RegistryStore } from "./storage/registry-store.js";
 import { ProjectStore } from "./storage/project-store.js";
-import { removePid, runningPid, writePid } from "./runtime/pid.js";
+import {
+  ensureToken,
+  removePid,
+  removePort,
+  resolvePort,
+  runningPid,
+  writePid,
+  writePort,
+} from "@repo/vcontext-core";
 
 export class AppBoostrap {
   private registry = new RegistryStore();
@@ -15,17 +20,22 @@ export class AppBoostrap {
     return project ? new ProjectStore(project) : null;
   }
 
-  bootstrap() {
+  async bootstrap() {
     const activePid = runningPid();
 
     if (activePid) {
       throw new Error(`vcontext daemon is already running with PID ${activePid}`);
     }
 
+    ensureToken();
+
+    const activity = { activeRequests: 0, activeLeases: 0, lastActivityAt: Date.now() };
+    const idleTimeout =
+      Number(process.env.VCONTEXT_IDLE_TIMEOUT_MS) || 30 * 60 * 1000;
     let server: ReturnType<typeof createServer>;
-    const app = createApp({
+    const services = {
       registry: this.registry,
-      Project: (slug) => this.Project(slug),
+      Project: (slug: string) => this.Project(slug),
       pid: process.pid,
       shutdown: () => {
         setTimeout(() => {
@@ -35,7 +45,20 @@ export class AppBoostrap {
           });
         }, 10);
       },
-    });
+      activity,
+    };
+    const app = createApp(services);
+
+    const idleTimer = setInterval(() => {
+      if (
+        activity.activeRequests === 0 &&
+        activity.activeLeases === 0 &&
+        Date.now() - activity.lastActivityAt > idleTimeout
+      ) {
+        clearInterval(idleTimer);
+        services.shutdown?.();
+      }
+    }, 30_000);
 
     server = createServer(async (req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -55,23 +78,19 @@ export class AppBoostrap {
       res.end(responseBody);
     });
 
-    const socket = getSocketPath();
-
-    if (process.platform !== "win32") {
-      mkdirSync(dirname(socket), { recursive: true });
-    }
-
-    if (process.platform !== "win32" && existsSync(socket)) {
-      unlinkSync(socket);
-    }
-
-    server.listen(socket, () => {
+    const port = await resolvePort();
+    server.listen(port, "127.0.0.1", () => {
+      writePort(port);
       writePid();
-      console.log("Listening on " + socket);
-      console.log("PID " + process.pid);
+      console.log(`Listening on http://127.0.0.1:${port}`);
+      console.log(`PID ${process.pid}`);
     });
 
-    const cleanup = () => removePid();
+    const cleanup = () => {
+      clearInterval(idleTimer);
+      removePort();
+      removePid();
+    };
 
     process.once("exit", cleanup);
     process.once("SIGINT", () => {

@@ -26,6 +26,6 @@ export function registerProjectContextRoutes(app: Hono, services: AppServices) {
       });
     }
 
-    return c.text(renderProjectContext(project));
+    return c.text(renderProjectContext(project, { compact: c.req.query("compact") === "true" }));
   });
 }

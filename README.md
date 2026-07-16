@@ -1,159 +1,137 @@
-# Turborepo starter
+# vcontext
 
-This Turborepo starter is maintained by the Turborepo core team.
+Durable context storage for AI coding agents. Store documents, tasks, change notes, and file-path descriptions that persist across agent sessions. Works with any AI agent via CLI or MCP.
 
-## Using this example
+## Quick start
 
-Run the following command:
+```bash
+# Start the daemon
+vcontext daemon start
 
-```sh
-npx create-turbo@latest
+# Create a project
+vcontext init my-project --description "My project" --path .
+
+# Give context to your AI agent
+vcontext give-context my-project
+
+# View as JSON (for programmatic use)
+vcontext give-context my-project --json
+
+# Manage documents
+vcontext doc list my-project
+vcontext doc add my-project --title "Architecture" --content "Stack: Node.js, SQLite, Hono"
+
+# Manage tasks
+vcontext task list my-project
+vcontext task add my-project --title "Add auth" --description "Implement JWT login"
+
+# Track changes
+vcontext change add my-project --note "Added rate limiting"
+
+# Describe files/directories
+vcontext file-context upsert my-project --path src/ --kind directory --description "Source code"
 ```
 
-## What's inside?
+## MCP (Model Context Protocol)
 
-This Turborepo includes the following packages/apps:
+Use vcontext with any MCP-compatible AI agent (Claude Desktop, OpenCode, Codex, etc.).
 
-### Apps and Packages
+### Setup
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+Build the daemon and MCP server:
+```bash
+pnpm install
+pnpm build
 ```
 
-Without global `turbo`, use your package manager:
+### Claude Desktop
 
-```sh
-cd my-turborepo
-npx turbo build
-pnpm dlx turbo build
-pnpm exec turbo build
+Add to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "vcontext": {
+      "command": "node",
+      "args": ["path/to/vcontext/apps/mcp/dist/src/index.js"]
+    }
+  }
+}
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### OpenCode
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo build --filter=docs
+Add to your `.opencode/mcp.json`:
+```json
+{
+  "servers": {
+    "vcontext": {
+      "command": "node",
+      "args": ["path/to/vcontext/apps/mcp/dist/src/index.js"]
+    }
+  }
+}
 ```
 
-Without global `turbo`:
+### Codex
 
-```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+Add to your `.codex/config.toml`:
+```toml
+[mcpServers.vcontext]
+command = "node"
+args = ["path/to/vcontext/apps/mcp/dist/src/index.js"]
 ```
 
-### Develop
+> **Note:** The MCP server auto-starts the vcontext daemon if it's not running. For best performance, start the daemon explicitly with `vcontext daemon start` before connecting.
 
-To develop all apps and packages, run the following command:
+### Available MCP tools
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+All 20 tools are prefixed with `vcontext_`:
 
-```sh
-cd my-turborepo
-turbo dev
+| Tool | Description |
+|------|-------------|
+| `vcontext_context` | Get compact project context (omits instructions, truncates docs) |
+| `vcontext_projects` | List all projects |
+| `vcontext_tasks_list` | List tasks |
+| `vcontext_tasks_add` | Add a task |
+| `vcontext_tasks_update` | Update a task |
+| `vcontext_tasks_delete` | Delete a task |
+| `vcontext_documents_list` | List documents |
+| `vcontext_documents_get` | Get a document by ID |
+| `vcontext_documents_add` | Add a document |
+| `vcontext_documents_update` | Update a document |
+| `vcontext_documents_delete` | Delete a document |
+| `vcontext_changes_list` | List changes |
+| `vcontext_changes_add` | Record a change |
+| `vcontext_file_context_list` | List file context entries |
+| `vcontext_file_context_upsert` | Create or update file context |
+| `vcontext_file_context_delete` | Delete file context |
+| `vcontext_prompts_list` | List prompts |
+| `vcontext_prompts_add` | Add a prompt |
+| `vcontext_prompts_update` | Update a prompt |
+| `vcontext_prompts_delete` | Delete a prompt |
+
+## Daemon
+
+The vcontext daemon runs in the background and stores all data in SQLite databases under `~/.vcontext/`.
+
+```bash
+vcontext daemon start
+vcontext daemon status
+vcontext daemon stop
 ```
 
-Without global `turbo`, use your package manager:
+The daemon auto-starts when needed by the CLI or MCP server.
 
-```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
+## Development
+
+```bash
+pnpm install
+pnpm build
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+## Project structure
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+- `apps/cli/` — CLI client (`vcontext` command)
+- `apps/deamon/` — Background daemon with HTTP API over Unix socket
+- `apps/mcp/` — MCP server for agent integration
+- `packages/daemon-client/` — Shared HTTP client used by CLI and MCP

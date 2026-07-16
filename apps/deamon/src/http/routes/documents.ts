@@ -4,7 +4,7 @@ import {
   CreateDocumentSchema,
   parseId,
   UpdateDocumentSchema,
-} from "../schemas.js";
+} from "@repo/vcontext-mcp";
 
 export function registerDocumentRoutes(app: Hono, services: AppServices) {
   app.get("/projects/:slug/documents", (c) => {

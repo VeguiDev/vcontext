@@ -5,6 +5,8 @@ import { registerChangeRoutes } from "./http/routes/changes.js";
 import { registerDaemonRoutes } from "./http/routes/daemon.js";
 import { registerDocumentRoutes } from "./http/routes/documents.js";
 import { registerFileContextRoutes } from "./http/routes/file-context.js";
+import { registerLeaseRoutes } from "./http/routes/leases.js";
+import { registerMcpRoutes } from "./http/routes/mcp.js";
 import { registerProjectContextRoutes } from "./http/routes/project-context.js";
 import { registerPromptRoutes } from "./http/routes/prompts.js";
 import { registerRegistryRoutes } from "./http/routes/registry.js";
@@ -17,6 +19,11 @@ export interface AppServices {
   Project: (slug: string) => ProjectStore | null;
   pid?: number;
   shutdown?: () => void;
+  activity?: {
+    activeRequests: number;
+    activeLeases: number;
+    lastActivityAt: number;
+  };
 }
 
 export function createApp(services: AppServices) {
@@ -41,6 +48,8 @@ export function createApp(services: AppServices) {
   registerChangeRoutes(app, services);
   registerTaskRoutes(app, services);
   registerFileContextRoutes(app, services);
+  registerMcpRoutes(app, services);
+  registerLeaseRoutes(app, services);
 
   return app;
 }

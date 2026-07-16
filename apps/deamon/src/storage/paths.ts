@@ -1,8 +1,7 @@
-import os from "node:os";
 import path from "node:path";
+import { VCONTEXT_HOME } from "@repo/vcontext-core";
 
-export const VCONTEXT_HOME =
-  process.env.VCONTEXT_HOME ?? path.join(os.homedir(), ".vcontext");
+export { VCONTEXT_HOME };
 
 export const REGISTRY_DB_PATH = path.join(VCONTEXT_HOME, "registry.db");
 export const PROJECTS_ROOT = path.join(VCONTEXT_HOME, "projects");

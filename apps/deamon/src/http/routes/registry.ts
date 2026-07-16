@@ -5,7 +5,7 @@ import {
   CreateProjectSchema,
   LinkProjectSchema,
   ProjectPathSchema,
-} from "../schemas.js";
+} from "@repo/vcontext-mcp";
 
 export function registerRegistryRoutes(app: Hono, services: AppServices) {
   app.get("/projects", (c) => {
