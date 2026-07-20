@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 import { createApp } from "./app.js";
 import { RegistryStore } from "./storage/registry-store.js";
-import { ProjectStore } from "./storage/project-store.js";
+import { ProjectService } from "./project/project-service.js";
+import { ProjectApplicationService } from "./application/project-application-service.js";
 import {
   ensureToken,
   removePid,
@@ -14,28 +15,43 @@ import {
 
 export class AppBoostrap {
   private registry = new RegistryStore();
+  private projects = new ProjectService(this.registry);
 
-  Project(slug: string) {
+  async Project(slug: string) {
     const project = this.registry.findBySlug(slug);
-    return project ? new ProjectStore(project) : null;
+    return project ? this.projects.openStore(project) : null;
   }
 
   async bootstrap() {
     const activePid = runningPid();
 
     if (activePid) {
-      throw new Error(`vcontext daemon is already running with PID ${activePid}`);
+      throw new Error(
+        `vcontext daemon is already running with PID ${activePid}`,
+      );
     }
 
     ensureToken();
 
-    const activity = { activeRequests: 0, activeLeases: 0, lastActivityAt: Date.now() };
+    const migrationFailures = await migrateRegisteredProjects(
+      this.registry,
+      this.projects,
+    );
+
+    const activity = {
+      activeRequests: 0,
+      activeLeases: 0,
+      lastActivityAt: Date.now(),
+    };
     const idleTimeout =
       Number(process.env.VCONTEXT_IDLE_TIMEOUT_MS) || 30 * 60 * 1000;
     let server: ReturnType<typeof createServer>;
     const services = {
       registry: this.registry,
+      projectService: this.projects,
+      application: new ProjectApplicationService(this.projects),
       Project: (slug: string) => this.Project(slug),
+      migrationFailures,
       pid: process.pid,
       shutdown: () => {
         setTimeout(() => {
@@ -102,6 +118,26 @@ export class AppBoostrap {
       process.exit(0);
     });
   }
+}
+
+export async function migrateRegisteredProjects(
+  registry: RegistryStore,
+  projects: ProjectService,
+  log: Pick<Console, "log" | "error"> = console,
+) {
+  const failures = new Map<string, Error>();
+  for (const project of registry.all()) {
+    try {
+      const handle = await projects.open(project);
+      handle.close();
+      log.log(`Project ${project.slug} migrations are current`);
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      failures.set(project.slug, failure);
+      log.error(`Project ${project.slug} migration failed: ${failure.message}`);
+    }
+  }
+  return failures;
 }
 
 async function readBody(req: NodeJS.ReadableStream) {

@@ -13,6 +13,8 @@ import type {
   FileContextStore,
   ProjectHandle,
   ProjectPromptRecord,
+  ProjectMigrationListRecord,
+  ProjectMigrationStatusRecord,
   PromptStore,
   RegisteredProjectRecord,
   RenderOpts,
@@ -23,6 +25,12 @@ import type {
   UpdateTaskInput,
   UpsertFileContextInput,
   VContextAPI,
+  EntityName,
+  ProjectLocator,
+  ReadSelector,
+  WriteSelector,
+  MergeApplyInput,
+  TaskStatus,
 } from "@repo/vcontext-mcp";
 
 type ApiRequest = (
@@ -82,6 +90,262 @@ export class CLIVContextAPI implements VContextAPI {
     return response.body;
   }
 
+  async migrationStatus(slug?: string): Promise<ProjectMigrationStatusRecord> {
+    const resolvedSlug = slug ?? this.resolveSlug();
+    return JSON.parse(
+      await this.api(`/projects/${resolvedSlug}/migrations/status`),
+    );
+  }
+
+  async migrationList(slug?: string): Promise<ProjectMigrationListRecord> {
+    const resolvedSlug = slug ?? this.resolveSlug();
+    return JSON.parse(
+      await this.api(`/projects/${resolvedSlug}/migrations/list`),
+    );
+  }
+
+  async projectStatus(locator: ProjectLocator): Promise<unknown> {
+    return this.getJson(`/projects/${this.resolveLocator(locator)}/status`);
+  }
+
+  async entityList(
+    entity: EntityName,
+    selector: ReadSelector,
+    status?: TaskStatus,
+  ): Promise<readonly unknown[]> {
+    const query = this.readQuery(selector);
+    if (status) query.set("status", status);
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/${entityRoute(entity)}?${query}`,
+    );
+  }
+
+  async entityGet(
+    entity: EntityName,
+    recordId: string,
+    selector: ReadSelector,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/${entityRoute(entity)}/${encodeURIComponent(recordId)}?${this.readQuery(selector)}`,
+    );
+  }
+
+  async entityHistory(
+    entity: EntityName,
+    recordId: string,
+    selector: ReadSelector,
+  ): Promise<readonly unknown[]> {
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/${entityRoute(entity)}/${encodeURIComponent(recordId)}/history?${this.readQuery(selector)}`,
+    );
+  }
+
+  async entityAdd(
+    entity: EntityName,
+    input: Record<string, unknown>,
+    selector: WriteSelector,
+  ) {
+    const route =
+      entity === "file_context"
+        ? `${entityRoute(entity)}/add`
+        : entityRoute(entity);
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/${route}?${this.writeQuery(selector)}`,
+      "POST",
+      input,
+    );
+  }
+
+  async entityUpdate(
+    entity: EntityName,
+    recordId: string,
+    input: Record<string, unknown>,
+    selector: WriteSelector,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/${entityRoute(entity)}/${encodeURIComponent(recordId)}?${this.writeQuery(selector)}`,
+      "PATCH",
+      input,
+    );
+  }
+
+  async entityDelete(
+    entity: EntityName,
+    recordId: string,
+    selector: WriteSelector,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/${entityRoute(entity)}/${encodeURIComponent(recordId)}?${this.writeQuery(selector)}`,
+      "DELETE",
+    );
+  }
+
+  async fileContextUpsert(
+    input: Record<string, unknown>,
+    selector: WriteSelector,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/file-context?${this.writeQuery(selector)}`,
+      "POST",
+      input,
+    );
+  }
+
+  async fileContextByPath(filePath: string, selector: ReadSelector) {
+    const query = this.readQuery(selector);
+    query.set("path", filePath);
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/file-context/by-path?${query}`,
+    );
+  }
+
+  async branchList(locator: ProjectLocator) {
+    return this.getJson(`/projects/${this.resolveLocator(locator)}/branches`);
+  }
+  async branchCurrent(locator: ProjectLocator) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/branches/current`,
+    );
+  }
+  async branchGet(name: string, locator: ProjectLocator) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/branches/${encodeURIComponent(name)}`,
+    );
+  }
+  async branchCreate(
+    name: string,
+    from: string | undefined,
+    locator: ProjectLocator,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/branches`,
+      "POST",
+      { name, from },
+    );
+  }
+  async branchCheckout(name: string, locator: ProjectLocator) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/branches/${encodeURIComponent(name)}/checkout`,
+      "POST",
+    );
+  }
+  async branchRename(name: string, newName: string, locator: ProjectLocator) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/branches/${encodeURIComponent(name)}`,
+      "PATCH",
+      { name: newName },
+    );
+  }
+  async branchDelete(name: string, locator: ProjectLocator) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/branches/${encodeURIComponent(name)}`,
+      "DELETE",
+    );
+  }
+  async snapshotList(selector: ReadSelector, limit?: number) {
+    const query = this.readQuery(selector);
+    if (limit !== undefined) query.set("limit", String(limit));
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/snapshots?${query}`,
+    );
+  }
+  async snapshotGet(snapshotId: string, locator: ProjectLocator) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/snapshots/${encodeURIComponent(snapshotId)}`,
+    );
+  }
+  async snapshotDiff(
+    snapshotId: string,
+    from: string | undefined,
+    locator: ProjectLocator,
+  ) {
+    const query = new URLSearchParams();
+    if (from) query.set("from", from);
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/snapshots/${encodeURIComponent(snapshotId)}/diff?${query}`,
+    );
+  }
+  async snapshotCheckout(
+    snapshotId: string,
+    branch: string,
+    locator: ProjectLocator,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/snapshots/${encodeURIComponent(snapshotId)}/checkout`,
+      "POST",
+      { branch },
+    );
+  }
+  async log(selector: ReadSelector, limit?: number) {
+    const query = this.readQuery(selector);
+    if (limit !== undefined) query.set("limit", String(limit));
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/log?${query}`,
+    );
+  }
+  async diff(
+    from: string | undefined,
+    to: string | undefined,
+    locator: ProjectLocator,
+  ) {
+    const query = new URLSearchParams();
+    if (from) query.set("from", from);
+    if (to) query.set("to", to);
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/diff?${query}`,
+    );
+  }
+  async mergePreview(
+    sourceBranch: string,
+    targetBranch: string | undefined,
+    locator: ProjectLocator,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/merge/preview`,
+      "POST",
+      { source_branch: sourceBranch, target_branch: targetBranch },
+    );
+  }
+  async mergeApply(input: MergeApplyInput) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(input)}/merge/apply`,
+      "POST",
+      input,
+    );
+  }
+
+  private async getJson(path: string, method = "GET", body?: unknown) {
+    return JSON.parse(await this.api(path, method, body));
+  }
+
+  private resolveLocator(locator: ProjectLocator) {
+    const explicit = locator.project_slug ?? locator.slug;
+    if (explicit) return encodeURIComponent(explicit);
+    const marker = findProjectMarker(locator.cwd ?? process.cwd());
+    if (!marker) {
+      throw new Error(
+        "Project could not be resolved; provide project_slug, slug, or cwd",
+      );
+    }
+    return encodeURIComponent(marker.marker.slug);
+  }
+
+  private readQuery(selector: ReadSelector) {
+    const query = new URLSearchParams();
+    if (selector.branch) query.set("branch", selector.branch);
+    if (selector.snapshot_id) query.set("snapshot_id", selector.snapshot_id);
+    return query;
+  }
+
+  private writeQuery(selector: WriteSelector) {
+    const query = new URLSearchParams();
+    if (selector.branch) query.set("branch", selector.branch);
+    if (selector.message !== undefined && selector.message !== null) {
+      query.set("message", selector.message);
+    }
+    return query;
+  }
+
   private async api(
     path: string,
     method = "GET",
@@ -108,6 +372,16 @@ export class CLIVContextAPI implements VContextAPI {
   }
 }
 
+function entityRoute(entity: EntityName) {
+  return entity === "project_prompt"
+    ? "prompts"
+    : entity === "change_note"
+      ? "changes"
+      : entity === "file_context"
+        ? "file-context"
+        : `${entity}s`;
+}
+
 class CliProjectHandle implements ProjectHandle {
   constructor(
     private readonly callApi: ApiRequest,
@@ -122,7 +396,7 @@ class CliProjectHandle implements ProjectHandle {
         await this.callApi(`/projects/${this.slug}/tasks`, "POST", input),
       ),
     update: async (
-      id: number,
+      id: string,
       input: UpdateTaskInput,
     ): Promise<TaskRecord | null> =>
       JSON.parse(
@@ -132,7 +406,7 @@ class CliProjectHandle implements ProjectHandle {
           input,
         ),
       ),
-    delete: async (id: number): Promise<boolean> =>
+    delete: async (id: string): Promise<boolean> =>
       JSON.parse(
         await this.callApi(`/projects/${this.slug}/tasks/${id}`, "DELETE"),
       ).deleted,
@@ -141,16 +415,14 @@ class CliProjectHandle implements ProjectHandle {
   readonly documents: DocumentStore = {
     list: async (): Promise<readonly DocumentRecord[]> =>
       JSON.parse(await this.callApi(`/projects/${this.slug}/documents`)),
-    get: async (id: number): Promise<DocumentRecord | null> =>
-      JSON.parse(
-        await this.callApi(`/projects/${this.slug}/documents/${id}`),
-      ),
+    get: async (id: string): Promise<DocumentRecord | null> =>
+      JSON.parse(await this.callApi(`/projects/${this.slug}/documents/${id}`)),
     add: async (input: CreateDocumentInput): Promise<DocumentRecord> =>
       JSON.parse(
         await this.callApi(`/projects/${this.slug}/documents`, "POST", input),
       ),
     update: async (
-      id: number,
+      id: string,
       input: UpdateDocumentInput,
     ): Promise<DocumentRecord | null> =>
       JSON.parse(
@@ -160,7 +432,7 @@ class CliProjectHandle implements ProjectHandle {
           input,
         ),
       ),
-    delete: async (id: number): Promise<boolean> =>
+    delete: async (id: string): Promise<boolean> =>
       JSON.parse(
         await this.callApi(`/projects/${this.slug}/documents/${id}`, "DELETE"),
       ).deleted,
@@ -186,7 +458,7 @@ class CliProjectHandle implements ProjectHandle {
           input,
         ),
       ),
-    delete: async (id: number): Promise<boolean> =>
+    delete: async (id: string): Promise<boolean> =>
       JSON.parse(
         await this.callApi(
           `/projects/${this.slug}/file-context/${id}`,
@@ -203,7 +475,7 @@ class CliProjectHandle implements ProjectHandle {
         await this.callApi(`/projects/${this.slug}/prompts`, "POST", input),
       ),
     update: async (
-      id: number,
+      id: string,
       input: UpdatePromptInput,
     ): Promise<ProjectPromptRecord | null> =>
       JSON.parse(
@@ -213,7 +485,7 @@ class CliProjectHandle implements ProjectHandle {
           input,
         ),
       ),
-    delete: async (id: number): Promise<boolean> =>
+    delete: async (id: string): Promise<boolean> =>
       JSON.parse(
         await this.callApi(`/projects/${this.slug}/prompts/${id}`, "DELETE"),
       ).deleted,

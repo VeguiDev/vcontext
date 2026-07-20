@@ -40,7 +40,7 @@ export const UpdateDocumentSchema = z.object({
 
 export const CreateChangeSchema = z.object({
   note: z.string().min(1),
-  document_id: z.number().int().positive().nullable().optional(),
+  document_id: z.string().min(1).nullable().optional(),
 });
 
 export const TaskStatusSchema = z.enum([
@@ -53,14 +53,14 @@ export const TaskStatusSchema = z.enum([
 export const CreateTaskSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  document_id: z.number().int().positive().nullable().optional(),
+  document_id: z.string().min(1).nullable().optional(),
   status: TaskStatusSchema.optional(),
 });
 
 export const UpdateTaskSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
-  document_id: z.number().int().positive().nullable().optional(),
+  document_id: z.string().min(1).nullable().optional(),
   status: TaskStatusSchema.optional(),
 });
 
@@ -73,68 +73,135 @@ export const UpsertFileContextSchema = z.object({
 });
 
 export function parseId(value: string) {
-  return z.coerce.number().int().positive().parse(value);
+  return z.string().min(1).parse(value);
 }
 
-export const ProjectPropertiesSchema = z.object({
-  slug: z.string().optional().describe("Project slug (optional if cwd resolves)"),
-  cwd: z.string().optional().describe("Working directory for slug auto-resolution"),
+export const ProjectPropertiesSchema = z
+  .object({
+    project_slug: z.string().optional().describe("Canonical project slug"),
+    slug: z
+      .string()
+      .optional()
+      .describe("Project slug (optional if cwd resolves)"),
+    cwd: z
+      .string()
+      .optional()
+      .describe("Working directory for slug auto-resolution"),
+  })
+  .superRefine((value, context) => {
+    if (value.project_slug && value.slug && value.project_slug !== value.slug) {
+      context.addIssue({
+        code: "custom",
+        message: "project_slug and legacy slug contradict each other",
+        path: ["project_slug"],
+      });
+    }
+  });
+
+export const ReadPropertiesSchema = ProjectPropertiesSchema.safeExtend({
+  branch: z.string().min(1).optional(),
+  snapshot_id: z.string().min(1).optional(),
+}).superRefine((value, context) => {
+  if (value.branch && value.snapshot_id) {
+    context.addIssue({
+      code: "custom",
+      message: "branch and snapshot_id are mutually exclusive",
+      path: ["snapshot_id"],
+    });
+  }
 });
+
+export const WritePropertiesSchema = ProjectPropertiesSchema.safeExtend({
+  branch: z.string().min(1).optional(),
+  message: z.string().nullable().optional(),
+});
+
+export function canonicalProject(value: {
+  project_slug?: string;
+  slug?: string;
+  cwd?: string;
+}) {
+  return {
+    project_slug: value.project_slug ?? value.slug,
+    cwd: value.cwd,
+  };
+}
+
+export function canonicalId(
+  canonical: string | undefined,
+  legacy: string | undefined,
+  canonicalName = "record_id",
+) {
+  if (canonical && legacy && canonical !== legacy) {
+    throw new Error(`${canonicalName} contradicts its legacy ID field`);
+  }
+  const value = canonical ?? legacy;
+  if (!value) throw new Error(`${canonicalName} is required`);
+  return value;
+}
 
 export const InputSchemaContext = ProjectPropertiesSchema;
 
 export const InputSchemaProjects = ProjectPropertiesSchema;
 
-export const InputSchemaTasksList = ProjectPropertiesSchema;
+export const InputSchemaMigrationStatus = ProjectPropertiesSchema;
 
-export const InputSchemaTasksAdd = ProjectPropertiesSchema.extend({
+export const InputSchemaMigrationList = ProjectPropertiesSchema;
+
+export const InputSchemaTasksList = ReadPropertiesSchema.safeExtend({
+  status: TaskStatusSchema.optional(),
+});
+
+export const InputSchemaTasksAdd = WritePropertiesSchema.safeExtend({
   title: z.string().describe("Task title"),
   description: z.string().optional().describe("Task description"),
+  document_id: z.string().nullable().optional(),
   status: TaskStatusSchema.optional().describe("Task status"),
 });
 
-export const InputSchemaTasksUpdate = ProjectPropertiesSchema.extend({
-  taskId: z.number().describe("Task ID"),
+export const InputSchemaTasksUpdate = WritePropertiesSchema.safeExtend({
+  taskId: z.string().describe("Task record ID"),
   title: z.string().optional().describe("Task title"),
-  description: z.string().optional().describe("Task description"),
+  description: z.string().nullable().optional().describe("Task description"),
+  document_id: z.string().nullable().optional(),
   status: TaskStatusSchema.optional().describe("Task status"),
 });
 
-export const InputSchemaTasksDelete = ProjectPropertiesSchema.extend({
-  taskId: z.number().describe("Task ID"),
+export const InputSchemaTasksDelete = WritePropertiesSchema.safeExtend({
+  taskId: z.string().describe("Task record ID"),
 });
 
-export const InputSchemaDocumentsList = ProjectPropertiesSchema;
+export const InputSchemaDocumentsList = ReadPropertiesSchema;
 
-export const InputSchemaDocumentsGet = ProjectPropertiesSchema.extend({
-  documentId: z.number().describe("Document ID"),
+export const InputSchemaDocumentsGet = ReadPropertiesSchema.safeExtend({
+  documentId: z.string().describe("Document record ID"),
 });
 
-export const InputSchemaDocumentsAdd = ProjectPropertiesSchema.extend({
+export const InputSchemaDocumentsAdd = WritePropertiesSchema.safeExtend({
   title: z.string().describe("Document title"),
   content: z.string().describe("Document content"),
 });
 
-export const InputSchemaDocumentsUpdate = ProjectPropertiesSchema.extend({
-  documentId: z.number().describe("Document ID"),
+export const InputSchemaDocumentsUpdate = WritePropertiesSchema.safeExtend({
+  documentId: z.string().describe("Document record ID"),
   title: z.string().optional().describe("Document title"),
   content: z.string().optional().describe("Document content"),
 });
 
-export const InputSchemaDocumentsDelete = ProjectPropertiesSchema.extend({
-  documentId: z.number().describe("Document ID"),
+export const InputSchemaDocumentsDelete = WritePropertiesSchema.safeExtend({
+  documentId: z.string().describe("Document record ID"),
 });
 
-export const InputSchemaChangesList = ProjectPropertiesSchema;
+export const InputSchemaChangesList = ReadPropertiesSchema;
 
-export const InputSchemaChangesAdd = ProjectPropertiesSchema.extend({
+export const InputSchemaChangesAdd = WritePropertiesSchema.safeExtend({
   note: z.string().describe("Change note"),
-  document_id: z.number().optional().describe("Related document ID"),
+  document_id: z.string().optional().describe("Related document record ID"),
 });
 
-export const InputSchemaFileContextList = ProjectPropertiesSchema;
+export const InputSchemaFileContextList = ReadPropertiesSchema;
 
-export const InputSchemaFileContextUpsert = ProjectPropertiesSchema.extend({
+export const InputSchemaFileContextUpsert = WritePropertiesSchema.safeExtend({
   path: z.string().describe("File or directory path"),
   description: z.string().describe("Context description"),
   kind: z
@@ -145,21 +212,21 @@ export const InputSchemaFileContextUpsert = ProjectPropertiesSchema.extend({
   hash: z.string().optional().describe("Content hash"),
 });
 
-export const InputSchemaFileContextDelete = ProjectPropertiesSchema.extend({
-  fileContextId: z.number().describe("File context entry ID"),
+export const InputSchemaFileContextDelete = WritePropertiesSchema.safeExtend({
+  fileContextId: z.string().describe("File context record ID"),
 });
 
-export const InputSchemaPromptsList = ProjectPropertiesSchema;
+export const InputSchemaPromptsList = ReadPropertiesSchema;
 
-export const InputSchemaPromptsAdd = ProjectPropertiesSchema.extend({
+export const InputSchemaPromptsAdd = WritePropertiesSchema.safeExtend({
   prompt: z.string().describe("Prompt text"),
 });
 
-export const InputSchemaPromptsUpdate = ProjectPropertiesSchema.extend({
-  promptId: z.number().describe("Prompt ID"),
+export const InputSchemaPromptsUpdate = WritePropertiesSchema.safeExtend({
+  promptId: z.string().describe("Prompt record ID"),
   prompt: z.string().describe("Prompt text"),
 });
 
-export const InputSchemaPromptsDelete = ProjectPropertiesSchema.extend({
-  promptId: z.number().describe("Prompt ID"),
+export const InputSchemaPromptsDelete = WritePropertiesSchema.safeExtend({
+  promptId: z.string().describe("Prompt record ID"),
 });

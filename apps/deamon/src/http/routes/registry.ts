@@ -14,11 +14,10 @@ export function registerRegistryRoutes(app: Hono, services: AppServices) {
 
   app.post("/projects", async (c) => {
     const body = CreateProjectSchema.parse(await c.req.json());
-    const project = services.registry.create(body);
-
-    for (const projectPath of body.paths ?? []) {
-      services.registry.addPath(project.slug, projectPath);
-    }
+    const project = await services.projectService.createProject(
+      body,
+      body.paths,
+    );
 
     return c.json(project, 201);
   });

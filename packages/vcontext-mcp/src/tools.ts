@@ -4,6 +4,8 @@ import {
   InputSchemaChangesAdd,
   InputSchemaChangesList,
   InputSchemaContext,
+  InputSchemaMigrationList,
+  InputSchemaMigrationStatus,
   InputSchemaDocumentsAdd,
   InputSchemaDocumentsDelete,
   InputSchemaDocumentsGet,
@@ -21,24 +23,32 @@ import {
   InputSchemaTasksDelete,
   InputSchemaTasksList,
   InputSchemaTasksUpdate,
+  ProjectPropertiesSchema,
+  ReadPropertiesSchema,
+  WritePropertiesSchema,
+  canonicalProject,
+  canonicalId,
 } from "./schemas.js";
 
 export interface ToolDefinition {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: z.ZodTypeAny;
-  readonly handler: (
-    args: Record<string, unknown>,
-  ) => Promise<{ content: Array<{ type: "text"; text: string }> }>;
+  readonly handler: (args: Record<string, unknown>) => Promise<{
+    content: Array<{ type: "text"; text: string }>;
+    isError?: boolean;
+  }>;
 }
 
-function content(result: unknown): { content: Array<{ type: "text"; text: string }> } {
+function content(result: unknown): {
+  content: Array<{ type: "text"; text: string }>;
+} {
   return { content: [{ type: "text", text: JSON.stringify(result) }] };
 }
 
 // allow: SIZE_OK — MCP tool definitions form one protocol registry.
 export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
-  return [
+  const legacy: ToolDefinition[] = [
     {
       name: "vcontext_context",
       description:
@@ -59,11 +69,36 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       },
     },
     {
+      name: "vcontext_migration_status",
+      description:
+        "Inspect the current, latest, applied, pending, checksum, post-migration, and backup state for a project.",
+      inputSchema: InputSchemaMigrationStatus,
+      handler: async (args) => {
+        const parsed = InputSchemaMigrationStatus.parse(args);
+        return content(await api.migrationStatus(parsed.slug));
+      },
+    },
+    {
+      name: "vcontext_migration_list",
+      description:
+        "List available project migrations and whether each is applied or pending.",
+      inputSchema: InputSchemaMigrationList,
+      handler: async (args) => {
+        const parsed = InputSchemaMigrationList.parse(args);
+        return content(await api.migrationList(parsed.slug));
+      },
+    },
+    {
       name: "vcontext_tasks_list",
       description: "List tasks for a project.",
       inputSchema: InputSchemaTasksList,
       handler: async (args) => {
         const parsed = InputSchemaTasksList.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityList("task", read(parsed), parsed.status),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.tasks.list());
       },
@@ -74,6 +109,15 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaTasksAdd,
       handler: async (args) => {
         const parsed = InputSchemaTasksAdd.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityAdd(
+              "task",
+              fields(parsed, ["title", "description", "document_id", "status"]),
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(
           await project.tasks.add({
@@ -90,6 +134,16 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaTasksUpdate,
       handler: async (args) => {
         const parsed = InputSchemaTasksUpdate.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityUpdate(
+              "task",
+              parsed.taskId,
+              fields(parsed, ["title", "description", "document_id", "status"]),
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(
           await project.tasks.update(parsed.taskId, {
@@ -106,6 +160,11 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaTasksDelete,
       handler: async (args) => {
         const parsed = InputSchemaTasksDelete.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityDelete("task", parsed.taskId, write(parsed)),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.tasks.delete(parsed.taskId));
       },
@@ -116,6 +175,9 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaDocumentsList,
       handler: async (args) => {
         const parsed = InputSchemaDocumentsList.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(await api.entityList("document", read(parsed)));
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.documents.list());
       },
@@ -126,6 +188,11 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaDocumentsGet,
       handler: async (args) => {
         const parsed = InputSchemaDocumentsGet.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityGet("document", parsed.documentId, read(parsed)),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.documents.get(parsed.documentId));
       },
@@ -136,6 +203,15 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaDocumentsAdd,
       handler: async (args) => {
         const parsed = InputSchemaDocumentsAdd.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityAdd(
+              "document",
+              fields(parsed, ["title", "content"]),
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(
           await project.documents.add({
@@ -151,6 +227,16 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaDocumentsUpdate,
       handler: async (args) => {
         const parsed = InputSchemaDocumentsUpdate.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityUpdate(
+              "document",
+              parsed.documentId,
+              fields(parsed, ["title", "content"]),
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(
           await project.documents.update(parsed.documentId, {
@@ -166,6 +252,15 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaDocumentsDelete,
       handler: async (args) => {
         const parsed = InputSchemaDocumentsDelete.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityDelete(
+              "document",
+              parsed.documentId,
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.documents.delete(parsed.documentId));
       },
@@ -176,6 +271,9 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaChangesList,
       handler: async (args) => {
         const parsed = InputSchemaChangesList.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(await api.entityList("change_note", read(parsed)));
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.changes.list());
       },
@@ -186,6 +284,15 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaChangesAdd,
       handler: async (args) => {
         const parsed = InputSchemaChangesAdd.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityAdd(
+              "change_note",
+              fields(parsed, ["note", "document_id"]),
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(
           await project.changes.add({
@@ -201,6 +308,9 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaFileContextList,
       handler: async (args) => {
         const parsed = InputSchemaFileContextList.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(await api.entityList("file_context", read(parsed)));
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.fileContexts.list());
       },
@@ -211,6 +321,20 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaFileContextUpsert,
       handler: async (args) => {
         const parsed = InputSchemaFileContextUpsert.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.fileContextUpsert(
+              fields(parsed, [
+                "path",
+                "description",
+                "kind",
+                "filename",
+                "hash",
+              ]),
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(
           await project.fileContexts.upsert({
@@ -229,10 +353,17 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaFileContextDelete,
       handler: async (args) => {
         const parsed = InputSchemaFileContextDelete.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityDelete(
+              "file_context",
+              parsed.fileContextId,
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
-        return content(
-          await project.fileContexts.delete(parsed.fileContextId),
-        );
+        return content(await project.fileContexts.delete(parsed.fileContextId));
       },
     },
     {
@@ -241,6 +372,9 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaPromptsList,
       handler: async (args) => {
         const parsed = InputSchemaPromptsList.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(await api.entityList("project_prompt", read(parsed)));
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.prompts.list());
       },
@@ -251,6 +385,15 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaPromptsAdd,
       handler: async (args) => {
         const parsed = InputSchemaPromptsAdd.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityAdd(
+              "project_prompt",
+              { prompt: parsed.prompt },
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.prompts.add({ prompt: parsed.prompt }));
       },
@@ -261,6 +404,16 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaPromptsUpdate,
       handler: async (args) => {
         const parsed = InputSchemaPromptsUpdate.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityUpdate(
+              "project_prompt",
+              parsed.promptId,
+              { prompt: parsed.prompt },
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(
           await project.prompts.update(parsed.promptId, {
@@ -275,9 +428,438 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
       inputSchema: InputSchemaPromptsDelete,
       handler: async (args) => {
         const parsed = InputSchemaPromptsDelete.parse(args);
+        if (typeof api.projectStatus === "function") {
+          return content(
+            await api.entityDelete(
+              "project_prompt",
+              parsed.promptId,
+              write(parsed),
+            ),
+          );
+        }
         const project = await api.getProject(parsed.slug);
         return content(await project.prompts.delete(parsed.promptId));
       },
     },
   ];
+  const definitions =
+    typeof api.projectStatus === "function"
+      ? [...legacy, ...createVersioningToolDefinitions(api)]
+      : legacy;
+  return definitions.map(wrapTool);
+}
+
+const recordSelectorSchema = ReadPropertiesSchema.safeExtend({
+  record_id: z.string().min(1).optional(),
+  documentId: z.string().min(1).optional(),
+  taskId: z.string().min(1).optional(),
+  changeId: z.string().min(1).optional(),
+  fileContextId: z.string().min(1).optional(),
+  promptId: z.string().min(1).optional(),
+});
+
+const documentUpdateFields = {
+  title: z.string().min(1).optional(),
+  content: z.string().optional(),
+};
+const changeUpdateFields = {
+  note: z.string().min(1).optional(),
+  document_id: z.string().min(1).nullable().optional(),
+};
+const fileFields = {
+  path: z.string().min(1).optional(),
+  description: z.string().optional(),
+  kind: z.enum(["file", "directory", "path"]).optional(),
+  filename: z.string().min(1).optional(),
+  hash: z.string().min(1).optional(),
+};
+
+function createVersioningToolDefinitions(api: VContextAPI): ToolDefinition[] {
+  const definitions: ToolDefinition[] = [
+    tool(
+      "vcontext_project_status",
+      "Get stable project, branch, snapshot, path, and visible entity counts.",
+      ProjectPropertiesSchema,
+      async (value) => api.projectStatus(project(value)),
+    ),
+  ];
+
+  definitions.push(
+    entityGetTool(api, "task", "tasks", "taskId"),
+    entityHistoryTool(api, "task", "tasks", "taskId"),
+    entityHistoryTool(api, "document", "documents", "documentId"),
+    entityGetTool(api, "change_note", "changes", "changeId"),
+    entityUpdateTool(
+      api,
+      "change_note",
+      "changes",
+      "changeId",
+      changeUpdateFields,
+    ),
+    entityDeleteTool(api, "change_note", "changes", "changeId"),
+    entityHistoryTool(api, "change_note", "changes", "changeId"),
+    entityGetTool(api, "file_context", "file_context", "fileContextId"),
+    tool(
+      "vcontext_file_context_add",
+      "Add a distinct file context record.",
+      WritePropertiesSchema.safeExtend({
+        path: z.string().min(1),
+        description: z.string(),
+        kind: z.enum(["file", "directory", "path"]).optional(),
+        filename: z.string().min(1).optional(),
+        hash: z.string().min(1).optional(),
+      }),
+      async (value) =>
+        api.entityAdd(
+          "file_context",
+          fields(value, Object.keys(fileFields)),
+          write(value),
+        ),
+    ),
+    entityUpdateTool(
+      api,
+      "file_context",
+      "file_context",
+      "fileContextId",
+      fileFields,
+    ),
+    entityHistoryTool(api, "file_context", "file_context", "fileContextId"),
+    tool(
+      "vcontext_file_context_get_by_path",
+      "Get file context by its business path.",
+      ReadPropertiesSchema.safeExtend({ path: z.string().min(1) }),
+      async (value) => api.fileContextByPath(String(value.path), read(value)),
+    ),
+    entityHistoryTool(api, "project_prompt", "prompts", "promptId"),
+  );
+
+  const namedBranch = ProjectPropertiesSchema.safeExtend({
+    name: z.string().min(1),
+  });
+  definitions.push(
+    tool(
+      "vcontext_branches_list",
+      "List project branches.",
+      ProjectPropertiesSchema,
+      async (value) => api.branchList(project(value)),
+    ),
+    tool(
+      "vcontext_branches_current",
+      "Get the currently checked out branch.",
+      ProjectPropertiesSchema,
+      async (value) => api.branchCurrent(project(value)),
+    ),
+    tool(
+      "vcontext_branches_create",
+      "Create a branch from a branch or snapshot reference.",
+      namedBranch.safeExtend({ from: z.string().min(1).optional() }),
+      async (value) =>
+        api.branchCreate(
+          String(value.name),
+          value.from as string | undefined,
+          project(value),
+        ),
+    ),
+    tool(
+      "vcontext_branches_checkout",
+      "Select an existing branch for subsequent default operations.",
+      namedBranch,
+      async (value) => api.branchCheckout(String(value.name), project(value)),
+    ),
+    tool(
+      "vcontext_branches_rename",
+      "Rename a branch.",
+      namedBranch.safeExtend({ new_name: z.string().min(1) }),
+      async (value) =>
+        api.branchRename(
+          String(value.name),
+          String(value.new_name),
+          project(value),
+        ),
+    ),
+    tool(
+      "vcontext_branches_delete",
+      "Delete a non-current branch.",
+      namedBranch,
+      async (value) => api.branchDelete(String(value.name), project(value)),
+    ),
+  );
+
+  const snapshotSchema = ProjectPropertiesSchema.safeExtend({
+    snapshot_id: z.string().min(1),
+  });
+  definitions.push(
+    tool(
+      "vcontext_snapshots_list",
+      "List reachable snapshots, newest first, with parents and labels.",
+      ReadPropertiesSchema.safeExtend({
+        limit: z.number().int().min(1).max(500).optional(),
+      }),
+      async (value) =>
+        api.snapshotList(read(value), value.limit as number | undefined),
+    ),
+    tool(
+      "vcontext_snapshots_diff",
+      "Diff business fields between a source reference and a snapshot.",
+      snapshotSchema.safeExtend({ from: z.string().min(1).optional() }),
+      async (value) =>
+        api.snapshotDiff(
+          String(value.snapshot_id),
+          value.from as string | undefined,
+          project(value),
+        ),
+    ),
+    tool(
+      "vcontext_snapshots_checkout",
+      "Create and select a branch at a snapshot; detached writes are never used.",
+      snapshotSchema.safeExtend({ branch: z.string().min(1) }),
+      async (value) =>
+        api.snapshotCheckout(
+          String(value.snapshot_id),
+          String(value.branch),
+          project(value),
+        ),
+    ),
+    tool(
+      "vcontext_log",
+      "Show reachable snapshot history, newest first.",
+      ReadPropertiesSchema.safeExtend({
+        limit: z.number().int().min(1).max(500).optional(),
+      }),
+      async (value) => api.log(read(value), value.limit as number | undefined),
+    ),
+  );
+
+  const mergeSchema = ProjectPropertiesSchema.safeExtend({
+    source_branch: z.string().min(1),
+    target_branch: z.string().min(1).optional(),
+  });
+  definitions.push(
+    tool(
+      "vcontext_merge_preview",
+      "Preview a three-way branch merge and its conflicts.",
+      mergeSchema,
+      async (value) =>
+        api.mergePreview(
+          String(value.source_branch),
+          value.target_branch as string | undefined,
+          project(value),
+        ),
+    ),
+    tool(
+      "vcontext_merge_apply",
+      "Apply a merge with manual, source, or target conflict strategy.",
+      mergeSchema.safeExtend({
+        strategy: z.enum(["manual", "source", "target"]).optional(),
+        resolutions: z.record(z.string(), z.unknown()).optional(),
+        message: z.string().nullable().optional(),
+      }),
+      async (value) =>
+        api.mergeApply({
+          ...project(value),
+          source_branch: String(value.source_branch),
+          target_branch: value.target_branch as string | undefined,
+          strategy: value.strategy as
+            | "manual"
+            | "source"
+            | "target"
+            | undefined,
+          resolutions: value.resolutions as Record<string, unknown> | undefined,
+          message: value.message as string | null | undefined,
+        }),
+    ),
+  );
+
+  return definitions;
+}
+
+function entityGetTool(
+  api: VContextAPI,
+  entity: import("./api.js").EntityName,
+  plural: string,
+  legacyId: string,
+): ToolDefinition {
+  return tool(
+    `vcontext_${plural}_get`,
+    `Get one ${entity} by public record_id.`,
+    recordSelectorSchema,
+    async (value) => api.entityGet(entity, id(value, legacyId), read(value)),
+  );
+}
+
+function entityHistoryTool(
+  api: VContextAPI,
+  entity: import("./api.js").EntityName,
+  plural: string,
+  legacyId: string,
+): ToolDefinition {
+  return tool(
+    `vcontext_${plural}_history`,
+    `List reachable revisions for one ${entity}, oldest first.`,
+    recordSelectorSchema,
+    async (value) =>
+      api.entityHistory(entity, id(value, legacyId), read(value)),
+  );
+}
+
+function entityUpdateTool(
+  api: VContextAPI,
+  entity: import("./api.js").EntityName,
+  plural: string,
+  legacyId: string,
+  updateFields: Record<string, z.ZodTypeAny>,
+): ToolDefinition {
+  return tool(
+    `vcontext_${plural}_update`,
+    `Update one ${entity} and create a snapshot.`,
+    WritePropertiesSchema.safeExtend({
+      record_id: z.string().min(1).optional(),
+      [legacyId]: z.string().min(1).optional(),
+      ...updateFields,
+    }),
+    async (value) =>
+      api.entityUpdate(
+        entity,
+        id(value, legacyId),
+        fields(value, Object.keys(updateFields)),
+        write(value),
+      ),
+  );
+}
+
+function entityDeleteTool(
+  api: VContextAPI,
+  entity: import("./api.js").EntityName,
+  plural: string,
+  legacyId: string,
+): ToolDefinition {
+  return tool(
+    `vcontext_${plural}_delete`,
+    `Delete one ${entity} by creating a tombstone revision.`,
+    WritePropertiesSchema.safeExtend({
+      record_id: z.string().min(1).optional(),
+      [legacyId]: z.string().min(1).optional(),
+    }),
+    async (value) =>
+      api.entityDelete(entity, id(value, legacyId), write(value)),
+  );
+}
+
+function tool(
+  name: string,
+  description: string,
+  inputSchema: z.ZodTypeAny,
+  action: (value: Record<string, unknown>) => Promise<unknown>,
+): ToolDefinition {
+  return {
+    name,
+    description,
+    inputSchema,
+    handler: async (args) =>
+      content(await action(inputSchema.parse(args) as Record<string, unknown>)),
+  };
+}
+
+function project(value: Record<string, unknown>) {
+  return canonicalProject(value as never);
+}
+
+function read(value: Record<string, unknown>) {
+  return {
+    ...project(value),
+    branch: value.branch as string | undefined,
+    snapshot_id: value.snapshot_id as string | undefined,
+  };
+}
+
+function write(value: Record<string, unknown>) {
+  if (value.snapshot_id !== undefined) {
+    throw new Error("Writes cannot target snapshot_id");
+  }
+  return {
+    ...project(value),
+    branch: value.branch as string | undefined,
+    message: value.message as string | null | undefined,
+  };
+}
+
+function id(value: Record<string, unknown>, legacyName: string) {
+  return canonicalId(
+    value.record_id as string | undefined,
+    value[legacyName] as string | undefined,
+  );
+}
+
+function fields(value: Record<string, unknown>, names: string[]) {
+  return Object.fromEntries(
+    names
+      .filter((name) => value[name] !== undefined)
+      .map((name) => [name, value[name]]),
+  );
+}
+
+function wrapTool(definition: ToolDefinition): ToolDefinition {
+  return {
+    ...definition,
+    handler: async (args) => {
+      try {
+        return await definition.handler(
+          normalizeLegacyArgs(definition.name, args),
+        );
+      } catch (error) {
+        const candidate = error as { code?: unknown; message?: unknown };
+        const code =
+          typeof candidate.code === "string"
+            ? candidate.code
+            : error instanceof z.ZodError
+              ? "VALIDATION_ERROR"
+              : "VALIDATION_ERROR";
+        const message =
+          typeof candidate.message === "string"
+            ? candidate.message.replace(
+                /\b(?:SELECT|INSERT|UPDATE|DELETE)\b[\s\S]*/i,
+                "Database operation failed",
+              )
+            : "vcontext operation failed";
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ isError: true, code, message }),
+            },
+          ],
+        };
+      }
+    },
+  };
+}
+
+function normalizeLegacyArgs(
+  name: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized = { ...args };
+  if (
+    typeof normalized.project_slug === "string" &&
+    normalized.slug === undefined
+  ) {
+    normalized.slug = normalized.project_slug;
+  }
+  const legacyByTool: Array<[RegExp, string]> = [
+    [/documents_(?:get|update|delete)$/, "documentId"],
+    [/tasks_(?:get|update|delete)$/, "taskId"],
+    [/changes_(?:get|update|delete)$/, "changeId"],
+    [/file_context_(?:get|update|delete)$/, "fileContextId"],
+    [/prompts_(?:get|update|delete)$/, "promptId"],
+  ];
+  const match = legacyByTool.find(([pattern]) => pattern.test(name));
+  if (match && typeof normalized.record_id === "string") {
+    const legacy = normalized[match[1]];
+    if (typeof legacy === "string" && legacy !== normalized.record_id) {
+      throw new Error("record_id contradicts its legacy ID field");
+    }
+    normalized[match[1]] = normalized.record_id;
+  }
+  return normalized;
 }

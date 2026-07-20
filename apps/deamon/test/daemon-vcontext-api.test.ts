@@ -20,10 +20,10 @@ describe("DaemonVContextAPI", { concurrency: false }, () => {
     previousHome = process.env.VCONTEXT_HOME;
     process.env.VCONTEXT_HOME = temporaryHome;
 
-    const [{ RegistryStore }, { ProjectStore }, { DaemonVContextAPI }] =
+    const [{ RegistryStore }, { ProjectService }, { DaemonVContextAPI }] =
       await Promise.all([
         import("../src/storage/registry-store.js"),
-        import("../src/storage/project-store.js"),
+        import("../src/project/project-service.js"),
         import("../src/mcp/daemon-api.js"),
       ]);
 
@@ -33,19 +33,19 @@ describe("DaemonVContextAPI", { concurrency: false }, () => {
       description: "SQLite fixture for DaemonVContextAPI",
     });
 
+    const projectService = new ProjectService(registry);
     const services: AppServices = {
       registry,
-      Project: (slug) => {
-        const registeredProject = registry.findBySlug(slug);
-        return registeredProject ? new ProjectStore(registeredProject) : null;
-      },
+      projectService,
+      Project: async (slug) =>
+        registry.findBySlug(slug) ? projectService.openStore(slug) : null,
     };
 
     api = new DaemonVContextAPI(services);
   });
 
   after(async () => {
-    registry["db"].close();
+    registry.close();
 
     await rm(temporaryHome, {
       recursive: true,
@@ -107,7 +107,7 @@ describe("DaemonVContextAPI", { concurrency: false }, () => {
     const handle = await api.getProject(project.slug);
     const task = await handle.tasks.add({ title: "Update this task" });
 
-    const updated = await handle.tasks.update(task.id, {
+    const updated = await handle.tasks.update(task.record_id, {
       title: "Updated task",
       status: "RUNNING",
     });
@@ -121,7 +121,7 @@ describe("DaemonVContextAPI", { concurrency: false }, () => {
     const handle = await api.getProject(project.slug);
     const task = await handle.tasks.add({ title: "Delete this task" });
 
-    const deleted = await handle.tasks.delete(task.id);
+    const deleted = await handle.tasks.delete(task.record_id);
 
     assert.equal(deleted, true);
   });

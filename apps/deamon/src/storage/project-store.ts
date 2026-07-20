@@ -1,332 +1,1453 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import Database from "better-sqlite3";
-import { migrateProject } from "./schema.js";
-import { projectDataDbPath, projectRoot } from "./paths.js";
+import type Database from "better-sqlite3";
+import { projectConfigPath } from "./paths.js";
+import {
+  readProjectJson,
+  updateProjectJson,
+} from "../project/project-metadata.js";
 import type { RegisteredProject } from "./registry-store.js";
+import {
+  ENTITY_FIELDS,
+  ENTITY_TYPES,
+  SnapshotStateResolver,
+  type EntityRecordMap,
+} from "./snapshot-state.js";
+import type {
+  BranchRecord,
+  EntityType,
+  FileContextKind,
+  FileContextRecord,
+  MergeApplyResult,
+  MergeChange,
+  MergeConflict,
+  MergePreview,
+  MergeResolution,
+  MergeResolutions,
+  SnapshotDiff,
+  SnapshotOptions,
+  SnapshotParentRecord,
+  SnapshotRecord,
+  SnapshotSummary,
+  TaskStatus,
+  VersionedRecord,
+} from "./project-records.js";
 
-export type TaskStatus = "BACKLOG" | "RUNNING" | "COMPLETED" | "CANCELLED";
+export * from "./project-records.js";
 
-export interface DocumentRecord {
-  id: number;
-  title: string;
-  content: string;
-  created_at: number;
-  updated_at: number;
+export type EntityCreateInputMap = {
+  project_prompt: { prompt: string };
+  document: { title: string; content: string };
+  change_note: { note: string; document_id?: string | null };
+  task: {
+    title: string;
+    description?: string;
+    document_id?: string | null;
+    status?: TaskStatus;
+  };
+  file_context: {
+    path: string;
+    kind?: FileContextKind;
+    filename?: string;
+    hash?: string;
+    description: string;
+  };
+};
+
+export type EntityUpdateInputMap = {
+  project_prompt: { prompt?: string };
+  document: { title?: string; content?: string };
+  change_note: { note?: string; document_id?: string | null };
+  task: {
+    title?: string;
+    description?: string | null;
+    document_id?: string | null;
+    status?: TaskStatus;
+  };
+  file_context: {
+    path?: string;
+    kind?: FileContextKind;
+    filename?: string;
+    hash?: string;
+    description?: string;
+  };
+};
+
+interface ProjectConfig {
+  current_branch: string;
 }
 
-export interface ProjectPromptRecord {
-  id: number;
-  prompt: string;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface ChangeRecord {
-  id: number;
-  note: string;
-  document_id: number | null;
-  created_at: number;
-}
-
-export interface TaskRecord {
-  id: number;
-  title: string;
-  description: string | null;
-  document_id: number | null;
-  status: TaskStatus;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface FileContextRecord {
-  id: number;
-  kind: "file" | "directory" | "path";
-  filename: string;
-  path: string;
-  hash: string;
-  description: string;
-  created_at: number;
-  updated_at: number;
-}
+const PROJECT_STORE_ACCESS = Symbol("migrated-project-store");
 
 export class ProjectStore {
-  private db: Database.Database;
+  readonly db: Database.Database;
+  readonly resolver: SnapshotStateResolver;
+  readonly branches: ProjectBranchesStore;
+  readonly merge: ProjectMergeStore;
+  private readonly configPath: string;
 
-  constructor(readonly project: RegisteredProject) {
-    fs.mkdirSync(projectRoot(project.slug), { recursive: true });
-
-    this.db = new Database(projectDataDbPath(project.slug));
-    migrateProject(this.db);
+  private constructor(
+    readonly project: RegisteredProject,
+    database: Database.Database,
+  ) {
+    this.db = database;
+    this.resolver = new SnapshotStateResolver(this.db);
+    this.configPath = projectConfigPath(project.slug);
+    this.ensureConfig();
+    this.branches = new ProjectBranchesStore(this);
+    this.merge = new ProjectMergeStore(this);
   }
 
-  prompt = {
-    find: () => {
-      return this.db
-        .prepare("SELECT * FROM project_prompt ORDER BY updated_at DESC")
-        .all() as ProjectPromptRecord[];
-    },
+  static fromMigratedDatabase(
+    project: RegisteredProject,
+    database: Database.Database,
+    access: symbol,
+  ) {
+    if (access !== PROJECT_STORE_ACCESS) {
+      throw new Error("ProjectStore must be opened through ProjectService");
+    }
+    return new ProjectStore(project, database);
+  }
 
-    create: (input: { prompt: string }) => {
-      const now = Date.now();
+  get current_branch() {
+    return this.readConfig().current_branch;
+  }
 
-      return this.db
-        .prepare(
-          `INSERT INTO project_prompt (prompt, created_at, updated_at)
-           VALUES (?, ?, ?)
-           RETURNING *`,
-        )
-        .get(input.prompt, now, now) as ProjectPromptRecord;
-    },
+  branch(name?: string) {
+    return new ProjectBranchStore(this, name ?? this.current_branch);
+  }
 
-    update: (id: number, input: { prompt: string }) => {
-      const now = Date.now();
+  snapshot(snapshotId: string) {
+    this.requireSnapshot(snapshotId);
+    return new ProjectSnapshotStore(this, snapshotId);
+  }
 
-      return (
-        (this.db
-          .prepare(
-            `UPDATE project_prompt
-             SET prompt = ?, updated_at = ?
-             WHERE id = ?
-             RETURNING *`,
+  close() {
+    this.db.close();
+  }
+
+  requireBranch(name: string) {
+    const branch = this.db
+      .prepare("SELECT * FROM branch WHERE name = ? LIMIT 1")
+      .get(name) as BranchRecord | undefined;
+    if (!branch) throw new Error(`Branch "${name}" does not exist`);
+    return branch;
+  }
+
+  requireSnapshot(id: string) {
+    const snapshot = this.db
+      .prepare("SELECT * FROM snapshot WHERE id = ? LIMIT 1")
+      .get(id) as SnapshotRecord | undefined;
+    if (!snapshot) throw new Error(`Snapshot "${id}" does not exist`);
+    return snapshot;
+  }
+
+  snapshotParents(id: string) {
+    this.requireSnapshot(id);
+    return this.db
+      .prepare(
+        `SELECT snapshot_id, parent_snapshot_id, parent_order
+         FROM snapshot_parent WHERE snapshot_id = ? ORDER BY parent_order ASC`,
+      )
+      .all(id) as SnapshotParentRecord[];
+  }
+
+  snapshotSummary(id: string): SnapshotSummary {
+    const snapshot = this.requireSnapshot(id);
+    const parents = this.snapshotParents(id);
+    const labels = this.db
+      .prepare(
+        "SELECT name FROM branch WHERE snapshot_id = ? ORDER BY name ASC",
+      )
+      .all(id) as Array<{ name: string }>;
+    return {
+      ...snapshot,
+      parents,
+      branch_labels: labels.map((label) => label.name),
+      is_merge: parents.length > 1,
+    };
+  }
+
+  walkSnapshots(startId: string): SnapshotSummary[] {
+    this.requireSnapshot(startId);
+    const rows = this.db
+      .prepare(
+        `WITH RECURSIVE reachable(id) AS (
+           SELECT ?
+           UNION
+           SELECT parent.parent_snapshot_id
+           FROM snapshot_parent parent JOIN reachable ON parent.snapshot_id = reachable.id
+         )
+         SELECT snapshot.id FROM snapshot JOIN reachable ON reachable.id = snapshot.id
+         ORDER BY snapshot.created_at DESC, snapshot.id DESC`,
+      )
+      .all(startId) as Array<{ id: string }>;
+    return rows.map((row) => this.snapshotSummary(row.id));
+  }
+
+  resolveReference(reference: string): string {
+    const branchPrefix = "branch:";
+    const snapshotPrefix = "snapshot:";
+    if (reference.startsWith(branchPrefix)) {
+      return this.requireBranch(reference.slice(branchPrefix.length))
+        .snapshot_id;
+    }
+    if (reference.startsWith(snapshotPrefix)) {
+      return this.requireSnapshot(reference.slice(snapshotPrefix.length)).id;
+    }
+    const branch = this.branches.findByName(reference);
+    const snapshot = this.db
+      .prepare("SELECT id FROM snapshot WHERE id = ? LIMIT 1")
+      .get(reference) as { id: string } | undefined;
+    if (branch && snapshot) {
+      throw new Error(
+        `Reference "${reference}" is ambiguous; use branch:${reference} or snapshot:${reference}`,
+      );
+    }
+    if (branch) return branch.snapshot_id;
+    if (snapshot) return snapshot.id;
+    throw new Error(`Reference "${reference}" does not exist`);
+  }
+
+  diff(fromSnapshotId: string, toSnapshotId: string): SnapshotDiff {
+    this.requireSnapshot(fromSnapshotId);
+    this.requireSnapshot(toSnapshotId);
+    const from = this.resolver.resolveAll(fromSnapshotId);
+    const to = this.resolver.resolveAll(toSnapshotId);
+    const changes: SnapshotDiff["changes"] = [];
+    for (const entityType of ENTITY_TYPES) {
+      const ids = new Set([
+        ...from.get(entityType)!.keys(),
+        ...to.get(entityType)!.keys(),
+      ]);
+      for (const recordId of [...ids].sort()) {
+        const beforeRevision = from.get(entityType)!.get(recordId) ?? null;
+        const afterRevision = to.get(entityType)!.get(recordId) ?? null;
+        const before = beforeRevision
+          ? businessData(entityType, beforeRevision)
+          : null;
+        const after = afterRevision
+          ? businessData(entityType, afterRevision)
+          : null;
+        if (sameValue(before, after)) continue;
+        const changedFields = ENTITY_FIELDS[entityType]
+          .filter(
+            (field) =>
+              !sameValue(before?.[field] ?? null, after?.[field] ?? null),
           )
-          .get(input.prompt, now, id) as ProjectPromptRecord | undefined) ?? null
-      );
-    },
+          .map((field) => ({
+            field,
+            before: before?.[field] ?? null,
+            after: after?.[field] ?? null,
+          }));
+        changes.push({
+          entity_type: entityType,
+          record_id: recordId,
+          type:
+            before === null
+              ? "created"
+              : after === null
+                ? "deleted"
+                : "updated",
+          before,
+          after,
+          changed_fields: changedFields,
+        });
+      }
+    }
+    return {
+      from_snapshot_id: fromSnapshotId,
+      to_snapshot_id: toSnapshotId,
+      changes,
+    };
+  }
 
-    delete: (id: number) => {
-      return this.db.prepare("DELETE FROM project_prompt WHERE id = ?").run(id)
-        .changes > 0;
-    },
-  };
+  writeCurrentBranch(name: string) {
+    this.writeConfig({ current_branch: name });
+  }
 
-  document = {
-    find: () => {
-      return this.db
-        .prepare("SELECT * FROM document ORDER BY updated_at DESC")
-        .all() as DocumentRecord[];
-    },
-
-    findById: (id: number) => {
-      return (
-        (this.db
-          .prepare("SELECT * FROM document WHERE id = ? LIMIT 1")
-          .get(id) as DocumentRecord | undefined) ?? null
-      );
-    },
-
-    create: (input: { title: string; content: string }) => {
+  createEntity<T extends EntityType>(
+    branchName: string,
+    entityType: T,
+    input: EntityCreateInputMap[T],
+    options?: SnapshotOptions,
+  ): EntityRecordMap[T] {
+    return this.db.transaction(() => {
+      const branch = this.requireBranch(branchName);
       const now = Date.now();
+      const data = normalizeCreate(entityType, input);
+      validateDocumentReference(this, branch.snapshot_id, entityType, data);
+      const snapshot = this.insertSnapshot(
+        [branch.snapshot_id],
+        options?.message === undefined
+          ? defaultMessage("Create", entityType, data)
+          : options.message,
+        now,
+      );
+      const record = this.insertRevision(entityType, {
+        id: randomUUID(),
+        record_id: randomUUID(),
+        snapshot_id: snapshot.id,
+        previous_revision_id: null,
+        deleted_at: null,
+        ...data,
+        created_at: now,
+        updated_at: now,
+      });
+      this.moveBranch(branchName, branch.snapshot_id, snapshot.id, now);
+      return record;
+    })();
+  }
 
-      return this.db
-        .prepare(
-          `INSERT INTO document (title, content, created_at, updated_at)
-           VALUES (?, ?, ?, ?)
-           RETURNING *`,
-        )
-        .get(input.title, input.content, now, now) as DocumentRecord;
-    },
+  updateEntity<T extends EntityType>(
+    branchName: string,
+    entityType: T,
+    recordId: string,
+    input: EntityUpdateInputMap[T],
+    options?: SnapshotOptions,
+  ): EntityRecordMap[T] | null {
+    return this.db.transaction(() => {
+      const branch = this.requireBranch(branchName);
+      const current = this.resolver.findByRecordId(
+        branch.snapshot_id,
+        entityType,
+        recordId,
+      );
+      if (!current) return null;
+      const now = Date.now();
+      const data = {
+        ...businessData(entityType, current),
+        ...definedValues(input as Record<string, unknown>),
+      };
+      validateDocumentReference(this, branch.snapshot_id, entityType, data);
+      const snapshot = this.insertSnapshot(
+        [branch.snapshot_id],
+        options?.message === undefined
+          ? defaultMessage("Update", entityType, data)
+          : options.message,
+        now,
+      );
+      const record = this.insertRevision(entityType, {
+        id: randomUUID(),
+        record_id: current.record_id,
+        snapshot_id: snapshot.id,
+        previous_revision_id: current.id,
+        deleted_at: null,
+        ...data,
+        created_at: current.created_at,
+        updated_at: now,
+      });
+      this.moveBranch(branchName, branch.snapshot_id, snapshot.id, now);
+      return record;
+    })();
+  }
 
-    update: (id: number, input: { title?: string; content?: string }) => {
-      const current = this.document.findById(id);
+  deleteEntity<T extends EntityType>(
+    branchName: string,
+    entityType: T,
+    recordId: string,
+    options?: SnapshotOptions,
+  ) {
+    return this.db.transaction(() => {
+      const branch = this.requireBranch(branchName);
+      const current = this.resolver.findByRecordId(
+        branch.snapshot_id,
+        entityType,
+        recordId,
+      );
+      if (!current) return false;
+      const now = Date.now();
+      const data = businessData(entityType, current);
+      const snapshot = this.insertSnapshot(
+        [branch.snapshot_id],
+        options?.message === undefined
+          ? defaultMessage("Delete", entityType, data)
+          : options.message,
+        now,
+      );
+      this.insertRevision(entityType, {
+        id: randomUUID(),
+        record_id: current.record_id,
+        snapshot_id: snapshot.id,
+        previous_revision_id: current.id,
+        deleted_at: now,
+        ...data,
+        created_at: current.created_at,
+        updated_at: now,
+      });
+      this.moveBranch(branchName, branch.snapshot_id, snapshot.id, now);
+      return true;
+    })();
+  }
 
-      if (!current) {
-        return null;
+  upsertFileContext(
+    branchName: string,
+    input: EntityCreateInputMap["file_context"],
+    options?: SnapshotOptions,
+  ) {
+    return this.db.transaction(() => {
+      const branch = this.requireBranch(branchName);
+      const current = this.resolver
+        .resolve(branch.snapshot_id, "file_context")
+        .find((record) => record.path === input.path);
+      const now = Date.now();
+      const data = current
+        ? {
+            ...businessData("file_context", current),
+            ...definedValues(input),
+            filename: input.filename ?? current.filename,
+          }
+        : normalizeCreate("file_context", input);
+      const snapshot = this.insertSnapshot(
+        [branch.snapshot_id],
+        options?.message === undefined
+          ? defaultMessage(current ? "Update" : "Create", "file_context", data)
+          : options.message,
+        now,
+      );
+      const record = this.insertRevision("file_context", {
+        id: randomUUID(),
+        record_id: current?.record_id ?? randomUUID(),
+        snapshot_id: snapshot.id,
+        previous_revision_id: current?.id ?? null,
+        deleted_at: null,
+        ...data,
+        created_at: current?.created_at ?? now,
+        updated_at: now,
+      });
+      this.moveBranch(branchName, branch.snapshot_id, snapshot.id, now);
+      return record;
+    })();
+  }
+
+  insertSnapshot(
+    parents: string[],
+    message: string | null,
+    createdAt = Date.now(),
+  ) {
+    const snapshot: SnapshotRecord = {
+      id: randomUUID(),
+      message,
+      created_at: createdAt,
+    };
+    this.db
+      .prepare(
+        "INSERT INTO snapshot (id, message, created_at) VALUES (?, ?, ?)",
+      )
+      .run(snapshot.id, snapshot.message, snapshot.created_at);
+    const insertParent = this.db.prepare(
+      `INSERT INTO snapshot_parent (snapshot_id, parent_snapshot_id, parent_order)
+       VALUES (?, ?, ?)`,
+    );
+    parents.forEach((parentId, order) =>
+      insertParent.run(snapshot.id, parentId, order),
+    );
+    return snapshot;
+  }
+
+  insertRevision<T extends EntityType>(
+    entityType: T,
+    value: Record<string, unknown>,
+  ): EntityRecordMap[T] {
+    const columns = [
+      "id",
+      "record_id",
+      "snapshot_id",
+      "previous_revision_id",
+      "deleted_at",
+      ...ENTITY_FIELDS[entityType],
+      "created_at",
+      "updated_at",
+    ];
+    return this.db
+      .prepare(
+        `INSERT INTO ${entityType} (${columns.join(", ")})
+         VALUES (${columns.map(() => "?").join(", ")})
+         RETURNING *`,
+      )
+      .get(...columns.map((column) => value[column])) as EntityRecordMap[T];
+  }
+
+  moveBranch(
+    name: string,
+    previousSnapshotId: string,
+    snapshotId: string,
+    now: number,
+  ) {
+    const result = this.db
+      .prepare(
+        `UPDATE branch SET snapshot_id = ?, updated_at = ?
+         WHERE name = ? AND snapshot_id = ?`,
+      )
+      .run(snapshotId, now, name, previousSnapshotId);
+    if (result.changes !== 1) {
+      throw new Error(`Branch "${name}" changed during the transaction`);
+    }
+  }
+
+  private ensureConfig() {
+    if (!fs.existsSync(this.configPath)) {
+      this.writeConfig({ current_branch: "main" });
+      return;
+    }
+    const config = this.readConfig();
+    const exists = this.db
+      .prepare("SELECT 1 FROM branch WHERE name = ?")
+      .get(config.current_branch);
+    if (!exists) this.writeConfig({ current_branch: "main" });
+  }
+
+  private readConfig(): ProjectConfig {
+    try {
+      const value = readProjectJson(this.configPath);
+      if (typeof value.current_branch !== "string") {
+        throw new Error("current_branch must be a string");
+      }
+      return { current_branch: value.current_branch };
+    } catch (error) {
+      throw new Error(
+        `Invalid project config at ${this.configPath}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private writeConfig(config: ProjectConfig) {
+    updateProjectJson(this.configPath, config);
+  }
+}
+
+export function createMigratedProjectStore(
+  project: RegisteredProject,
+  database: Database.Database,
+) {
+  return ProjectStore.fromMigratedDatabase(
+    project,
+    database,
+    PROJECT_STORE_ACCESS,
+  );
+}
+
+export class ProjectSnapshotStore {
+  readonly prompt: VersionedReadStore<"project_prompt">;
+  readonly document: VersionedReadStore<"document">;
+  readonly change: VersionedReadStore<"change_note">;
+  readonly task: TaskReadStore;
+  readonly fileContext: VersionedReadStore<"file_context">;
+
+  constructor(
+    readonly projectStore: ProjectStore,
+    readonly snapshot_id: string,
+  ) {
+    this.prompt = new VersionedReadStore(
+      projectStore,
+      snapshot_id,
+      "project_prompt",
+    );
+    this.document = new VersionedReadStore(
+      projectStore,
+      snapshot_id,
+      "document",
+    );
+    this.change = new VersionedReadStore(
+      projectStore,
+      snapshot_id,
+      "change_note",
+    );
+    this.task = new TaskReadStore(projectStore, snapshot_id);
+    this.fileContext = new VersionedReadStore(
+      projectStore,
+      snapshot_id,
+      "file_context",
+    );
+  }
+}
+
+export class ProjectBranchStore {
+  readonly prompt: VersionedBranchEntityStore<"project_prompt">;
+  readonly document: VersionedBranchEntityStore<"document">;
+  readonly change: VersionedBranchEntityStore<"change_note">;
+  readonly task: TaskBranchStore;
+  readonly fileContext: FileContextBranchStore;
+
+  constructor(
+    readonly projectStore: ProjectStore,
+    readonly name: string,
+  ) {
+    projectStore.requireBranch(name);
+    this.prompt = new VersionedBranchEntityStore(
+      projectStore,
+      name,
+      "project_prompt",
+    );
+    this.document = new VersionedBranchEntityStore(
+      projectStore,
+      name,
+      "document",
+    );
+    this.change = new VersionedBranchEntityStore(
+      projectStore,
+      name,
+      "change_note",
+    );
+    this.task = new TaskBranchStore(projectStore, name);
+    this.fileContext = new FileContextBranchStore(projectStore, name);
+  }
+
+  get snapshot_id() {
+    return this.projectStore.requireBranch(this.name).snapshot_id;
+  }
+}
+
+export class VersionedReadStore<T extends EntityType> {
+  constructor(
+    protected readonly store: ProjectStore,
+    protected readonly snapshotId: string,
+    readonly entityType: T,
+  ) {}
+
+  find(): Array<EntityRecordMap[T]> {
+    return sortRecords(
+      this.entityType,
+      this.store.resolver.resolve(this.snapshotId, this.entityType),
+    );
+  }
+
+  findByRecordId(recordId: string) {
+    return this.store.resolver.findByRecordId(
+      this.snapshotId,
+      this.entityType,
+      recordId,
+    );
+  }
+
+  findRevisionById(revisionId: string) {
+    return this.store.resolver.findRevisionById(this.entityType, revisionId);
+  }
+
+  history(recordId: string) {
+    return this.store.resolver.history(
+      this.snapshotId,
+      this.entityType,
+      recordId,
+    );
+  }
+}
+
+export class VersionedBranchEntityStore<
+  T extends Exclude<EntityType, "file_context" | "task">,
+> extends VersionedReadStore<T> {
+  constructor(
+    store: ProjectStore,
+    readonly branchName: string,
+    entityType: T,
+  ) {
+    super(store, store.requireBranch(branchName).snapshot_id, entityType);
+  }
+
+  private currentSnapshotId() {
+    return this.store.requireBranch(this.branchName).snapshot_id;
+  }
+
+  override find() {
+    return sortRecords(
+      this.entityType,
+      this.store.resolver.resolve(this.currentSnapshotId(), this.entityType),
+    );
+  }
+
+  override findByRecordId(recordId: string) {
+    return this.store.resolver.findByRecordId(
+      this.currentSnapshotId(),
+      this.entityType,
+      recordId,
+    );
+  }
+
+  override history(recordId: string) {
+    return this.store.resolver.history(
+      this.currentSnapshotId(),
+      this.entityType,
+      recordId,
+    );
+  }
+
+  create(input: EntityCreateInputMap[T], options?: SnapshotOptions) {
+    return this.store.createEntity(
+      this.branchName,
+      this.entityType,
+      input,
+      options,
+    );
+  }
+
+  update(
+    recordId: string,
+    input: EntityUpdateInputMap[T],
+    options?: SnapshotOptions,
+  ) {
+    return this.store.updateEntity(
+      this.branchName,
+      this.entityType,
+      recordId,
+      input,
+      options,
+    );
+  }
+
+  delete(recordId: string, options?: SnapshotOptions) {
+    return this.store.deleteEntity(
+      this.branchName,
+      this.entityType,
+      recordId,
+      options,
+    );
+  }
+}
+
+export class TaskReadStore extends VersionedReadStore<"task"> {
+  constructor(store: ProjectStore, snapshotId: string) {
+    super(store, snapshotId, "task");
+  }
+
+  find(status?: TaskStatus) {
+    const records = super.find();
+    return status
+      ? records.filter((record) => record.status === status)
+      : records;
+  }
+}
+
+export class TaskBranchStore extends TaskReadStore {
+  constructor(
+    store: ProjectStore,
+    readonly branchName: string,
+  ) {
+    super(store, store.requireBranch(branchName).snapshot_id);
+  }
+
+  private currentSnapshotId() {
+    return this.store.requireBranch(this.branchName).snapshot_id;
+  }
+
+  override find(status?: TaskStatus) {
+    const records = sortRecords(
+      "task",
+      this.store.resolver.resolve(this.currentSnapshotId(), "task"),
+    );
+    return status
+      ? records.filter((record) => record.status === status)
+      : records;
+  }
+
+  override findByRecordId(recordId: string) {
+    return this.store.resolver.findByRecordId(
+      this.currentSnapshotId(),
+      "task",
+      recordId,
+    );
+  }
+
+  override history(recordId: string) {
+    return this.store.resolver.history(
+      this.currentSnapshotId(),
+      "task",
+      recordId,
+    );
+  }
+
+  create(input: EntityCreateInputMap["task"], options?: SnapshotOptions) {
+    return this.store.createEntity(this.branchName, "task", input, options);
+  }
+
+  update(
+    recordId: string,
+    input: EntityUpdateInputMap["task"],
+    options?: SnapshotOptions,
+  ) {
+    return this.store.updateEntity(
+      this.branchName,
+      "task",
+      recordId,
+      input,
+      options,
+    );
+  }
+
+  delete(recordId: string, options?: SnapshotOptions) {
+    return this.store.deleteEntity(this.branchName, "task", recordId, options);
+  }
+}
+
+export class FileContextBranchStore extends VersionedReadStore<"file_context"> {
+  constructor(
+    store: ProjectStore,
+    readonly branchName: string,
+  ) {
+    super(store, store.requireBranch(branchName).snapshot_id, "file_context");
+  }
+
+  private currentSnapshotId() {
+    return this.store.requireBranch(this.branchName).snapshot_id;
+  }
+
+  override find() {
+    return sortRecords(
+      "file_context",
+      this.store.resolver.resolve(this.currentSnapshotId(), "file_context"),
+    );
+  }
+
+  override findByRecordId(recordId: string) {
+    return this.store.resolver.findByRecordId(
+      this.currentSnapshotId(),
+      "file_context",
+      recordId,
+    );
+  }
+
+  override history(recordId: string) {
+    return this.store.resolver.history(
+      this.currentSnapshotId(),
+      "file_context",
+      recordId,
+    );
+  }
+
+  create(
+    input: EntityCreateInputMap["file_context"],
+    options?: SnapshotOptions,
+  ) {
+    return this.store.createEntity(
+      this.branchName,
+      "file_context",
+      input,
+      options,
+    );
+  }
+
+  update(
+    recordId: string,
+    input: EntityUpdateInputMap["file_context"],
+    options?: SnapshotOptions,
+  ) {
+    return this.store.updateEntity(
+      this.branchName,
+      "file_context",
+      recordId,
+      input,
+      options,
+    );
+  }
+
+  upsert(
+    input: EntityCreateInputMap["file_context"],
+    options?: SnapshotOptions,
+  ) {
+    return this.store.upsertFileContext(this.branchName, input, options);
+  }
+
+  delete(recordId: string, options?: SnapshotOptions) {
+    return this.store.deleteEntity(
+      this.branchName,
+      "file_context",
+      recordId,
+      options,
+    );
+  }
+}
+
+export class ProjectBranchesStore {
+  constructor(private readonly store: ProjectStore) {}
+
+  find() {
+    return this.store.db
+      .prepare("SELECT * FROM branch ORDER BY name ASC")
+      .all() as BranchRecord[];
+  }
+
+  findByName(name: string) {
+    return (
+      (this.store.db
+        .prepare("SELECT * FROM branch WHERE name = ? LIMIT 1")
+        .get(name) as BranchRecord | undefined) ?? null
+    );
+  }
+
+  create(name: string, from?: string) {
+    validateBranchName(name);
+    if (this.findByName(name))
+      throw new Error(`Branch "${name}" already exists`);
+    const snapshotId = from
+      ? this.resolveFrom(from)
+      : this.store.branch().snapshot_id;
+    const now = Date.now();
+    return this.store.db
+      .prepare(
+        `INSERT INTO branch (name, snapshot_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?) RETURNING *`,
+      )
+      .get(name, snapshotId, now, now) as BranchRecord;
+  }
+
+  createAndCheckout(name: string, from: string) {
+    const branch = this.create(name, from);
+    try {
+      this.store.writeCurrentBranch(name);
+      return branch;
+    } catch (error) {
+      this.store.db.prepare("DELETE FROM branch WHERE name = ?").run(name);
+      throw error;
+    }
+  }
+
+  rename(oldName: string, newName: string) {
+    validateBranchName(newName);
+    const current = this.store.current_branch;
+    this.store.requireBranch(oldName);
+    if (this.findByName(newName)) {
+      throw new Error(`Branch "${newName}" already exists`);
+    }
+    const branch = this.store.db
+      .prepare(
+        "UPDATE branch SET name = ?, updated_at = ? WHERE name = ? RETURNING *",
+      )
+      .get(newName, Date.now(), oldName) as BranchRecord;
+    if (current === oldName) this.store.writeCurrentBranch(newName);
+    return branch;
+  }
+
+  delete(name: string) {
+    this.store.requireBranch(name);
+    if (name === this.store.current_branch) {
+      throw new Error("Cannot delete the currently checked-out branch");
+    }
+    const count = this.store.db
+      .prepare("SELECT COUNT(*) AS count FROM branch")
+      .get() as {
+      count: number;
+    };
+    if (count.count <= 1)
+      throw new Error("Cannot delete the last remaining branch");
+    this.store.db.prepare("DELETE FROM branch WHERE name = ?").run(name);
+    return true;
+  }
+
+  checkout(name: string) {
+    const branch = this.store.requireBranch(name);
+    this.store.writeCurrentBranch(name);
+    return branch;
+  }
+
+  private resolveFrom(from: string) {
+    const branch = this.findByName(from);
+    if (branch) return branch.snapshot_id;
+    return this.store.requireSnapshot(from).id;
+  }
+}
+
+export class ProjectMergeStore {
+  constructor(private readonly store: ProjectStore) {}
+
+  preview(
+    sourceBranch: string,
+    targetBranch = this.store.current_branch,
+  ): MergePreview {
+    return this.compute(sourceBranch, targetBranch).preview;
+  }
+
+  apply(
+    sourceBranch: string,
+    targetBranch = this.store.current_branch,
+    resolutions?: MergeResolutions,
+    message?: string | null,
+  ): MergeApplyResult {
+    return this.store.db.transaction(() => {
+      const computed = this.compute(sourceBranch, targetBranch, resolutions);
+      if (computed.unresolved.length > 0) {
+        throw new Error(
+          `Merge has ${computed.unresolved.length} unresolved conflict(s)`,
+        );
+      }
+      const { preview, plans } = computed;
+      if (preview.source_snapshot_id === preview.target_snapshot_id) {
+        throw new Error("Source and target already point to the same snapshot");
+      }
+      const now = Date.now();
+      const snapshot = this.store.insertSnapshot(
+        [preview.target_snapshot_id, preview.source_snapshot_id],
+        message === undefined
+          ? `Merge branch "${sourceBranch}" into "${targetBranch}"`
+          : message,
+        now,
+      );
+
+      for (const plan of plans) {
+        const target = this.store.resolver.findByRecordId(
+          preview.target_snapshot_id,
+          plan.entityType,
+          plan.recordId,
+          true,
+        );
+        const template = plan.value ?? plan.template;
+        if (!template) continue;
+        const provisional = this.store.resolver.findByRecordId(
+          snapshot.id,
+          plan.entityType,
+          plan.recordId,
+          true,
+        );
+        if (sameEntity(plan.entityType, alive(provisional), plan.value)) {
+          continue;
+        }
+        this.store.insertRevision(plan.entityType, {
+          id: randomUUID(),
+          record_id: plan.recordId,
+          snapshot_id: snapshot.id,
+          previous_revision_id: target?.id ?? null,
+          deleted_at: plan.value ? null : now,
+          ...businessData(plan.entityType, template),
+          created_at: target?.created_at ?? template.created_at,
+          updated_at: now,
+        });
       }
 
-      const now = Date.now();
+      this.store.moveBranch(
+        targetBranch,
+        preview.target_snapshot_id,
+        snapshot.id,
+        now,
+      );
+      return {
+        ...preview,
+        changes: plans.map((plan) => ({
+          entity_type: plan.entityType,
+          record_id: plan.recordId,
+          value: plan.value,
+        })),
+        conflicts: [],
+        snapshot,
+      };
+    })();
+  }
 
-      return this.db
-        .prepare(
-          `UPDATE document
-           SET title = ?, content = ?, updated_at = ?
-           WHERE id = ?
-           RETURNING *`,
-        )
-        .get(
-          input.title ?? current.title,
-          input.content ?? current.content,
-          now,
-          id,
-        ) as DocumentRecord;
-    },
+  private compute(
+    sourceBranch: string,
+    targetBranch: string,
+    resolutions?: MergeResolutions,
+  ) {
+    const source = this.store.requireBranch(sourceBranch);
+    const target = this.store.requireBranch(targetBranch);
+    const baseId = this.store.resolver.commonAncestor(
+      source.snapshot_id,
+      target.snapshot_id,
+    );
+    if (!baseId) throw new Error("Branches do not share a common ancestor");
 
-    delete: (id: number) => {
-      return this.db.prepare("DELETE FROM document WHERE id = ?").run(id)
-        .changes > 0;
-    },
-  };
+    const baseState = this.store.resolver.resolveAll(baseId, true);
+    const sourceState = this.store.resolver.resolveAll(
+      source.snapshot_id,
+      true,
+    );
+    const targetState = this.store.resolver.resolveAll(
+      target.snapshot_id,
+      true,
+    );
+    const conflicts: MergeConflict[] = [];
+    const unresolved: MergeConflict[] = [];
+    const plans: MergePlan[] = [];
 
-  change = {
-    find: () => {
-      return this.db
-        .prepare("SELECT * FROM change_note ORDER BY created_at DESC")
-        .all() as ChangeRecord[];
-    },
-
-    create: (input: { note: string; document_id?: number | null }) => {
-      const now = Date.now();
-
-      return this.db
-        .prepare(
-          `INSERT INTO change_note (note, document_id, created_at)
-           VALUES (?, ?, ?)
-           RETURNING *`,
-        )
-        .get(input.note, input.document_id ?? null, now) as ChangeRecord;
-    },
-  };
-
-  task = {
-    find: (status?: TaskStatus) => {
-      if (status) {
-        return this.db
-          .prepare("SELECT * FROM task WHERE status = ? ORDER BY updated_at DESC")
-          .all(status) as TaskRecord[];
+    for (const entityType of ENTITY_TYPES) {
+      const ids = new Set([
+        ...baseState.get(entityType)!.keys(),
+        ...sourceState.get(entityType)!.keys(),
+        ...targetState.get(entityType)!.keys(),
+      ]);
+      for (const recordId of ids) {
+        const baseRecord = baseState.get(entityType)!.get(recordId) ?? null;
+        const sourceRecord = sourceState.get(entityType)!.get(recordId) ?? null;
+        const targetRecord = targetState.get(entityType)!.get(recordId) ?? null;
+        const result = mergeRecord(
+          entityType,
+          recordId,
+          baseRecord,
+          sourceRecord,
+          targetRecord,
+          resolutions,
+        );
+        conflicts.push(...result.conflicts);
+        unresolved.push(...result.unresolved);
+        const sourceChanged = !sameEntity(
+          entityType,
+          alive(baseRecord),
+          alive(sourceRecord),
+        );
+        const targetChanged = !sameEntity(
+          entityType,
+          alive(baseRecord),
+          alive(targetRecord),
+        );
+        if (
+          (sourceChanged || targetChanged) &&
+          !sameEntity(entityType, alive(sourceRecord), alive(targetRecord)) &&
+          (result.value !== null || result.template !== null)
+        ) {
+          plans.push({
+            entityType,
+            recordId,
+            value: result.value,
+            template: result.template,
+          });
+        }
       }
+    }
 
-      return this.db
-        .prepare("SELECT * FROM task ORDER BY updated_at DESC")
-        .all() as TaskRecord[];
-    },
-
-    create: (input: {
-      title: string;
-      description?: string;
-      document_id?: number | null;
-      status?: TaskStatus;
-    }) => {
-      const now = Date.now();
-
-      return this.db
-        .prepare(
-          `INSERT INTO task (
-            title, description, document_id, status, created_at, updated_at
-           )
-           VALUES (?, ?, ?, ?, ?, ?)
-           RETURNING *`,
-        )
-        .get(
-          input.title,
-          input.description ?? null,
-          input.document_id ?? null,
-          input.status ?? "BACKLOG",
-          now,
-          now,
-        ) as TaskRecord;
-    },
-
-    update: (
-      id: number,
-      input: {
-        title?: string;
-        description?: string | null;
-        document_id?: number | null;
-        status?: TaskStatus;
+    const changes: MergeChange[] = plans.map((plan) => ({
+      entity_type: plan.entityType,
+      record_id: plan.recordId,
+      value: plan.value,
+    }));
+    return {
+      preview: {
+        source_branch: sourceBranch,
+        target_branch: targetBranch,
+        base_snapshot_id: baseId,
+        source_snapshot_id: source.snapshot_id,
+        target_snapshot_id: target.snapshot_id,
+        changes,
+        conflicts,
       },
-    ) => {
-      const current = this.db
-        .prepare("SELECT * FROM task WHERE id = ? LIMIT 1")
-        .get(id) as TaskRecord | undefined;
+      plans,
+      unresolved,
+    };
+  }
+}
 
-      if (!current) {
-        return null;
-      }
+interface MergePlan {
+  entityType: EntityType;
+  recordId: string;
+  value: VersionedRecord | null;
+  template: VersionedRecord | null;
+}
 
-      const now = Date.now();
+function mergeRecord(
+  entityType: EntityType,
+  recordId: string,
+  baseRevision: VersionedRecord | null,
+  sourceRevision: VersionedRecord | null,
+  targetRevision: VersionedRecord | null,
+  resolutions?: MergeResolutions,
+) {
+  const base = alive(baseRevision);
+  const source = alive(sourceRevision);
+  const target = alive(targetRevision);
+  const sourceChanged = !sameEntity(entityType, base, source);
+  const targetChanged = !sameEntity(entityType, base, target);
+  const conflicts: MergeConflict[] = [];
+  const unresolved: MergeConflict[] = [];
 
-      return this.db
-        .prepare(
-          `UPDATE task
-           SET title = ?,
-               description = ?,
-               document_id = ?,
-               status = ?,
-               updated_at = ?
-           WHERE id = ?
-           RETURNING *`,
-        )
-        .get(
-          input.title ?? current.title,
-          input.description === undefined
-            ? current.description
-            : input.description,
-          input.document_id === undefined
-            ? current.document_id
-            : input.document_id,
-          input.status ?? current.status,
-          now,
-          id,
-        ) as TaskRecord;
-    },
+  if (!sourceChanged || sameEntity(entityType, source, target)) {
+    return {
+      value: target,
+      template: targetRevision,
+      changedFromTarget: false,
+      conflicts,
+      unresolved,
+    };
+  }
+  if (!targetChanged) {
+    return {
+      value: source,
+      template: sourceRevision,
+      changedFromTarget: true,
+      conflicts,
+      unresolved,
+    };
+  }
 
-    delete: (id: number) => {
-      return this.db.prepare("DELETE FROM task WHERE id = ?").run(id).changes > 0;
-    },
+  if ((source === null) !== (target === null)) {
+    const conflict: MergeConflict = {
+      entity_type: entityType,
+      record_id: recordId,
+      type: "DELETE_UPDATE",
+      base_value: base,
+      source_value: source,
+      target_value: target,
+    };
+    conflicts.push(conflict);
+    const resolved = resolveConflict(conflict, resolutions, source, target);
+    if (!resolved.resolved) unresolved.push(conflict);
+    const resolvedRecord = toResolvedRecord(
+      resolved.value,
+      targetRevision ?? sourceRevision ?? baseRevision,
+    );
+    return {
+      value: resolvedRecord,
+      template:
+        resolvedRecord ?? sourceRevision ?? targetRevision ?? baseRevision,
+      changedFromTarget: !sameEntity(entityType, resolvedRecord, target),
+      conflicts,
+      unresolved,
+    };
+  }
+
+  if (base === null && source !== null && target !== null) {
+    const conflict: MergeConflict = {
+      entity_type: entityType,
+      record_id: recordId,
+      type: "CREATE_CREATE",
+      source_value: source,
+      target_value: target,
+    };
+    conflicts.push(conflict);
+    const resolved = resolveConflict(conflict, resolutions, source, target);
+    if (!resolved.resolved) unresolved.push(conflict);
+    const resolvedRecord = toResolvedRecord(
+      resolved.value,
+      targetRevision ?? sourceRevision,
+    );
+    return {
+      value: resolvedRecord,
+      template: resolvedRecord ?? sourceRevision ?? targetRevision,
+      changedFromTarget: !sameEntity(entityType, resolvedRecord, target),
+      conflicts,
+      unresolved,
+    };
+  }
+
+  if (!base || !source || !target) {
+    return {
+      value: target,
+      template: targetRevision,
+      changedFromTarget: false,
+      conflicts,
+      unresolved,
+    };
+  }
+
+  const merged = { ...target } as VersionedRecord & Record<string, unknown>;
+  for (const field of ENTITY_FIELDS[entityType]) {
+    const baseValue = (base as unknown as Record<string, unknown>)[field];
+    const sourceValue = (source as unknown as Record<string, unknown>)[field];
+    const targetValue = (target as unknown as Record<string, unknown>)[field];
+    const sourceFieldChanged = !sameValue(baseValue, sourceValue);
+    const targetFieldChanged = !sameValue(baseValue, targetValue);
+    if (
+      sourceFieldChanged &&
+      targetFieldChanged &&
+      !sameValue(sourceValue, targetValue)
+    ) {
+      const conflict: MergeConflict = {
+        entity_type: entityType,
+        record_id: recordId,
+        type: "FIELD_CONFLICT",
+        field,
+        base_value: baseValue,
+        source_value: sourceValue,
+        target_value: targetValue,
+      };
+      conflicts.push(conflict);
+      const resolved = resolveConflict(
+        conflict,
+        resolutions,
+        sourceValue,
+        targetValue,
+      );
+      if (!resolved.resolved) unresolved.push(conflict);
+      if (resolved.resolved) merged[field] = resolved.value;
+    } else if (sourceFieldChanged) {
+      merged[field] = sourceValue;
+    }
+  }
+  return {
+    value: merged,
+    template: merged,
+    changedFromTarget: !sameEntity(entityType, merged, target),
+    conflicts,
+    unresolved,
   };
+}
 
-  fileContext = {
-    find: () => {
-      return this.db
-        .prepare(
-          `SELECT id,
-                  kind,
-                  filename,
-                  path,
-                  hash,
-                  description,
-                  created_at,
-                  updated_at
-           FROM file_context
-           ORDER BY path ASC`,
-        )
-        .all() as FileContextRecord[];
-    },
+function resolveConflict(
+  conflict: MergeConflict,
+  resolutions: MergeResolutions | undefined,
+  source: unknown,
+  target: unknown,
+) {
+  const fieldKey = `${conflict.entity_type}:${conflict.record_id}:${conflict.field ?? ""}`;
+  const recordKey = `${conflict.entity_type}:${conflict.record_id}`;
+  const fieldResolution = resolutions?.[fieldKey];
+  const recordResolution = resolutions?.[recordKey];
+  const resolution = fieldResolution ?? recordResolution;
+  if (resolution === undefined) return { resolved: false, value: target };
+  if (resolution === "source" || isChoice(resolution, "source")) {
+    return { resolved: true, value: source };
+  }
+  if (resolution === "target" || isChoice(resolution, "target")) {
+    return { resolved: true, value: target };
+  }
+  if (
+    typeof resolution === "object" &&
+    resolution !== null &&
+    "custom" in resolution
+  ) {
+    const custom =
+      fieldResolution === undefined &&
+      conflict.field &&
+      typeof resolution.custom === "object" &&
+      resolution.custom !== null
+        ? (resolution.custom as Record<string, unknown>)[conflict.field]
+        : resolution.custom;
+    return { resolved: true, value: custom };
+  }
+  return { resolved: false, value: target };
+}
 
-    upsert: (input: {
-      path: string;
-      kind?: "file" | "directory" | "path";
-      filename?: string;
-      hash?: string;
-      description: string;
-    }) => {
-      const now = Date.now();
-      const filename = input.filename ?? nameFromPath(input.path);
+function toResolvedRecord(
+  value: unknown,
+  fallback: VersionedRecord | null,
+): VersionedRecord | null {
+  if (value === null) return null;
+  if (typeof value !== "object" || fallback === null) {
+    throw new Error(
+      "A custom entity merge resolution must be an object or null",
+    );
+  }
+  return { ...fallback, ...value } as VersionedRecord;
+}
 
-      return this.db
-        .prepare(
-          `INSERT INTO file_context (
-            kind, filename, path, hash, description, created_at, updated_at
-           )
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(path) DO UPDATE SET
-             kind = excluded.kind,
-             filename = excluded.filename,
-             hash = excluded.hash,
-             description = excluded.description,
-             updated_at = excluded.updated_at
-           RETURNING *`,
-        )
-        .get(
-          input.kind ?? "path",
-          filename,
-          input.path,
-          input.hash ?? "",
-          input.description,
-          now,
-          now,
-        ) as FileContextRecord;
-    },
+function isChoice(resolution: MergeResolution, choice: "source" | "target") {
+  return (
+    typeof resolution === "object" &&
+    resolution !== null &&
+    choice in resolution &&
+    (resolution as Record<string, unknown>)[choice] === true
+  );
+}
 
-    delete: (id: number) => {
-      return this.db.prepare("DELETE FROM file_context WHERE id = ?").run(id)
-        .changes > 0;
-    },
+function alive(record: VersionedRecord | null) {
+  return record?.deleted_at === null ? record : null;
+}
+
+function sameEntity(
+  entityType: EntityType,
+  left: VersionedRecord | null,
+  right: VersionedRecord | null,
+) {
+  if (left === null || right === null) return left === right;
+  return ENTITY_FIELDS[entityType].every((field) =>
+    sameValue(
+      (left as unknown as Record<string, unknown>)[field],
+      (right as unknown as Record<string, unknown>)[field],
+    ),
+  );
+}
+
+function sameValue(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function normalizeCreate<T extends EntityType>(
+  entityType: T,
+  input: EntityCreateInputMap[T],
+) {
+  const value = { ...(input as Record<string, unknown>) };
+  if (entityType === "change_note") value.document_id ??= null;
+  if (entityType === "task") {
+    value.description ??= null;
+    value.document_id ??= null;
+    value.status ??= "BACKLOG";
+  }
+  if (entityType === "file_context") {
+    value.kind ??= "path";
+    value.filename ??= nameFromPath(String(value.path));
+    value.hash ??= "";
+  }
+  return value;
+}
+
+function businessData(entityType: EntityType, record: VersionedRecord) {
+  const source = record as unknown as Record<string, unknown>;
+  return Object.fromEntries(
+    ENTITY_FIELDS[entityType].map((field) => [field, source[field]]),
+  );
+}
+
+function definedValues(input: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  );
+}
+
+function validateDocumentReference(
+  store: ProjectStore,
+  snapshotId: string,
+  entityType: EntityType,
+  data: Record<string, unknown>,
+) {
+  if (entityType !== "task" && entityType !== "change_note") return;
+  const documentId = data.document_id;
+  if (
+    documentId !== null &&
+    documentId !== undefined &&
+    !store.resolver.findByRecordId(snapshotId, "document", String(documentId))
+  ) {
+    throw new Error(`Document record "${String(documentId)}" does not exist`);
+  }
+}
+
+function defaultMessage(
+  action: string,
+  entityType: EntityType,
+  data: Record<string, unknown>,
+) {
+  const labels: Record<EntityType, string> = {
+    project_prompt: "project prompt",
+    document: "document",
+    change_note: "change note",
+    task: "task",
+    file_context: "file context",
   };
+  const identity =
+    entityType === "document" || entityType === "task"
+      ? data.title
+      : entityType === "file_context"
+        ? data.path
+        : entityType === "change_note"
+          ? data.note
+          : data.prompt;
+  const suffix =
+    typeof identity === "string" && identity.length > 0 ? ` "${identity}"` : "";
+  return `${action} ${labels[entityType]}${suffix}`;
+}
+
+function sortRecords<T extends EntityType>(
+  entityType: T,
+  records: Array<EntityRecordMap[T]>,
+) {
+  return [...records].sort((left, right) => {
+    if (entityType === "file_context") {
+      return String((left as FileContextRecord).path).localeCompare(
+        String((right as FileContextRecord).path),
+      );
+    }
+    const field = entityType === "change_note" ? "created_at" : "updated_at";
+    return Number(right[field]) - Number(left[field]);
+  });
+}
+
+function validateBranchName(name: string) {
+  if (
+    !/^[A-Za-z0-9](?:[A-Za-z0-9._/-]{0,126}[A-Za-z0-9._-])?$/.test(name) ||
+    name.includes("..") ||
+    name.includes("//")
+  ) {
+    throw new Error(
+      `Invalid branch name "${name}". Use letters, numbers, ".", "_", "-", and "/" without "..", "//", or a trailing "/".`,
+    );
+  }
 }
 
 function nameFromPath(value: string) {
   const trimmed = value.replace(/[\\/]+$/, "");
-  const name = trimmed.split(/[\\/]/).pop();
-
-  return name && name.length > 0 ? name : value;
+  return trimmed.split(/[\\/]/).pop() || value;
 }

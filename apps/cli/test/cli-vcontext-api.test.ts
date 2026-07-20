@@ -67,16 +67,19 @@ describe("CLIVContextAPI daemon integration", () => {
     assert.equal(created.status, "BACKLOG");
 
     const listed = await project.tasks.list();
-    assert.deepEqual(listed.map((task) => task.id), [created.id]);
+    assert.deepEqual(
+      listed.map((task) => task.id),
+      [created.id],
+    );
 
-    const updated = await project.tasks.update(created.id, {
+    const updated = await project.tasks.update(created.record_id, {
       title: "Updated integration task",
       status: "RUNNING",
     });
     assert.equal(updated?.title, "Updated integration task");
     assert.equal(updated?.status, "RUNNING");
 
-    const deleted = await project.tasks.delete(created.id);
+    const deleted = await project.tasks.delete(created.record_id);
     assert.equal(deleted, true);
   });
 
@@ -91,7 +94,10 @@ describe("CLIVContextAPI daemon integration", () => {
     assert.equal(projectResponse.status, 200);
     const projectBody: unknown = await projectResponse.json();
     assert.ok(typeof projectBody === "object" && projectBody !== null);
-    assert.equal("slug" in projectBody ? projectBody.slug : undefined, PROJECT_SLUG);
+    assert.equal(
+      "slug" in projectBody ? projectBody.slug : undefined,
+      PROJECT_SLUG,
+    );
 
     const tasksResponse = await fetch(
       `http://127.0.0.1:${fixture.port}/projects/${PROJECT_SLUG}/tasks`,
@@ -100,5 +106,39 @@ describe("CLIVContextAPI daemon integration", () => {
     assert.equal(tasksResponse.status, 200);
     const tasksBody: unknown = await tasksResponse.json();
     assert.deepEqual(tasksBody, []);
+  });
+
+  it("reports migration status and list through the API", async () => {
+    assert.ok(api);
+    const status = await api.migrationStatus(PROJECT_SLUG);
+    assert.equal(status.current_version, "2.0.0");
+    assert.equal(status.latest_version, "2.0.0");
+    assert.equal(status.checksum_state, "valid");
+    assert.deepEqual(status.pending, []);
+
+    const list = await api.migrationList(PROJECT_SLUG);
+    assert.deepEqual(
+      list.migrations.map((migration) => migration.version),
+      ["1.0.0", "2.0.0"],
+    );
+  });
+
+  it("emits valid JSON for migration status and run commands", () => {
+    assert.ok(fixture);
+    const statusOutput = execFileSync(
+      process.execPath,
+      [CLI_ENTRY, "migration", "status", PROJECT_SLUG, "--json"],
+      { cwd: fixture.projectPath, env: fixture.env, encoding: "utf8" },
+    );
+    const status = JSON.parse(statusOutput) as { current_version: string };
+    assert.equal(status.current_version, "2.0.0");
+
+    const runOutput = execFileSync(
+      process.execPath,
+      [CLI_ENTRY, "migration", "run", PROJECT_SLUG, "--to", "2.0.0", "--json"],
+      { cwd: fixture.projectPath, env: fixture.env, encoding: "utf8" },
+    );
+    const run = JSON.parse(runOutput) as { applied: string[] };
+    assert.deepEqual(run.applied, []);
   });
 });

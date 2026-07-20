@@ -15,7 +15,7 @@ import type {
 import { buildMcp, createToolDefinitions } from "../src/index.js";
 import type { ToolDefinition } from "../src/tools.js";
 
-// allow: SIZE_OK — one self-contained fake backs the complete 20-tool contract matrix.
+// allow: SIZE_OK — one self-contained fake backs the complete 22-tool contract matrix.
 const PROJECT: RegisteredProjectRecord = {
   id: 1,
   uuid: "abc",
@@ -26,9 +26,9 @@ const PROJECT: RegisteredProjectRecord = {
   updated_at: 1,
 };
 
-function updateRecord<T extends { readonly id: number }>(
+function updateRecord<T extends { readonly id: string }>(
   records: T[],
-  id: number,
+  id: string,
   transform: (record: T) => T,
 ): T | null {
   const index = records.findIndex((record) => record.id === id);
@@ -39,14 +39,26 @@ function updateRecord<T extends { readonly id: number }>(
   return updated;
 }
 
-function deleteRecord<T extends { readonly id: number }>(
+function deleteRecord<T extends { readonly id: string }>(
   records: T[],
-  id: number,
+  id: string,
 ): boolean {
   const index = records.findIndex((record) => record.id === id);
   if (index < 0) return false;
   records.splice(index, 1);
   return true;
+}
+
+function versionFields(id: string) {
+  return {
+    id,
+    record_id: id,
+    snapshot_id: "snapshot",
+    previous_revision_id: null,
+    deleted_at: null,
+    created_at: 1,
+    updated_at: 1,
+  };
 }
 
 class MockProjectHandle implements ProjectHandle {
@@ -60,14 +72,12 @@ class MockProjectHandle implements ProjectHandle {
     list: async () => this.taskRecords,
     add: async (input) => {
       const record: TaskRecord = {
-        id: this.taskRecords.length + 1,
+        ...versionFields(String(this.taskRecords.length + 1)),
         project_id: PROJECT.id,
         title: input.title,
         description: input.description ?? null,
         status: input.status ?? "BACKLOG",
         document_id: input.document_id ?? null,
-        created_at: 1,
-        updated_at: 1,
       };
       this.taskRecords.push(record);
       return record;
@@ -77,10 +87,14 @@ class MockProjectHandle implements ProjectHandle {
         ...record,
         title: input.title ?? record.title,
         description:
-          input.description === undefined ? record.description : input.description,
+          input.description === undefined
+            ? record.description
+            : input.description,
         status: input.status ?? record.status,
         document_id:
-          input.document_id === undefined ? record.document_id : input.document_id,
+          input.document_id === undefined
+            ? record.document_id
+            : input.document_id,
         updated_at: 2,
       })),
     delete: async (id) => deleteRecord(this.taskRecords, id),
@@ -92,12 +106,10 @@ class MockProjectHandle implements ProjectHandle {
       this.documentRecords.find((record) => record.id === id) ?? null,
     add: async (input) => {
       const record: DocumentRecord = {
-        id: this.documentRecords.length + 1,
+        ...versionFields(String(this.documentRecords.length + 1)),
         project_id: PROJECT.id,
         title: input.title,
         content: input.content,
-        created_at: 1,
-        updated_at: 1,
       };
       this.documentRecords.push(record);
       return record;
@@ -116,12 +128,10 @@ class MockProjectHandle implements ProjectHandle {
     list: async () => this.changeRecords,
     add: async (input) => {
       const record: ChangeRecord = {
-        id: this.changeRecords.length + 1,
+        ...versionFields(String(this.changeRecords.length + 1)),
         project_id: PROJECT.id,
         note: input.note,
         document_id: input.document_id ?? null,
-        created_at: 1,
-        updated_at: 1,
       };
       this.changeRecords.push(record);
       return record;
@@ -135,25 +145,25 @@ class MockProjectHandle implements ProjectHandle {
         (record) => record.path === input.path,
       );
       if (existing !== undefined) {
-        return updateRecord(this.fileContextRecords, existing.id, (record) => ({
-          ...record,
-          kind: input.kind ?? record.kind,
-          filename: input.filename ?? record.filename,
-          hash: input.hash ?? record.hash,
-          description: input.description,
-          updated_at: 2,
-        })) ?? existing;
+        return (
+          updateRecord(this.fileContextRecords, existing.id, (record) => ({
+            ...record,
+            kind: input.kind ?? record.kind,
+            filename: input.filename ?? record.filename,
+            hash: input.hash ?? record.hash,
+            description: input.description,
+            updated_at: 2,
+          })) ?? existing
+        );
       }
       const record: FileContextRecord = {
-        id: this.fileContextRecords.length + 1,
+        ...versionFields(String(this.fileContextRecords.length + 1)),
         project_id: PROJECT.id,
         path: input.path,
         kind: input.kind ?? null,
         filename: input.filename ?? null,
         hash: input.hash ?? null,
         description: input.description,
-        created_at: 1,
-        updated_at: 1,
       };
       this.fileContextRecords.push(record);
       return record;
@@ -165,10 +175,8 @@ class MockProjectHandle implements ProjectHandle {
     list: async () => this.promptRecords,
     add: async (input) => {
       const record: ProjectPromptRecord = {
-        id: this.promptRecords.length + 1,
+        ...versionFields(String(this.promptRecords.length + 1)),
         prompt: input.prompt,
-        created_at: 1,
-        updated_at: 1,
       };
       this.promptRecords.push(record);
       return record;
@@ -197,11 +205,35 @@ class MockVContextAPI implements VContextAPI {
   async renderContext(_slug?: string): Promise<string> {
     return "context";
   }
+
+  async migrationStatus(_slug?: string) {
+    return {
+      project_slug: PROJECT.slug,
+      current_version: "2.0.0",
+      latest_version: "2.0.0",
+      applied: [],
+      pending: [],
+      checksum_state: "valid" as const,
+      incomplete_post_migrations: [],
+      backup_paths: [],
+    };
+  }
+
+  async migrationList(_slug?: string) {
+    return {
+      project_slug: PROJECT.slug,
+      current_version: "2.0.0",
+      latest_version: "2.0.0",
+      migrations: [],
+    };
+  }
 }
 
 const expectedNames = [
   "vcontext_context",
   "vcontext_projects",
+  "vcontext_migration_status",
+  "vcontext_migration_list",
   "vcontext_tasks_list",
   "vcontext_tasks_add",
   "vcontext_tasks_update",
@@ -230,7 +262,8 @@ before(async () => {
   const server = buildMcp(api);
   tools = createToolDefinitions(api);
   client = new Client({ name: "contract-test", version: "1.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
   await Promise.all([
     client.connect(clientTransport),
     server.connect(serverTransport),
@@ -242,10 +275,10 @@ after(async () => {
 });
 
 describe("vcontext MCP tool contracts", () => {
-  it("registers all 20 tools for tools/list", async () => {
+  it("registers all 22 tools for tools/list", async () => {
     assert.ok(client);
     const result = await client.listTools();
-    assert.equal(result.tools.length, 20);
+    assert.equal(result.tools.length, 22);
     assert.deepEqual(
       result.tools.map((tool) => tool.name),
       expectedNames,
@@ -253,7 +286,7 @@ describe("vcontext MCP tool contracts", () => {
   });
 
   it("exposes complete metadata for every tool", () => {
-    assert.equal(tools.length, 20);
+    assert.equal(tools.length, 22);
     for (const tool of tools) {
       assert.ok(tool.description.length > 0);
       assert.ok(tool.inputSchema);
@@ -264,31 +297,62 @@ describe("vcontext MCP tool contracts", () => {
     const calls: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
       ["vcontext_context", { slug: PROJECT.slug }],
       ["vcontext_projects", {}],
+      ["vcontext_migration_status", { slug: PROJECT.slug }],
+      ["vcontext_migration_list", { slug: PROJECT.slug }],
       ["vcontext_tasks_list", { slug: PROJECT.slug }],
-      ["vcontext_tasks_add", { slug: PROJECT.slug, title: "Draft", status: "RUNNING" }],
-      ["vcontext_tasks_update", { slug: PROJECT.slug, taskId: 1, title: "Done", status: "COMPLETED" }],
-      ["vcontext_tasks_delete", { slug: PROJECT.slug, taskId: 1 }],
+      [
+        "vcontext_tasks_add",
+        { slug: PROJECT.slug, title: "Draft", status: "RUNNING" },
+      ],
+      [
+        "vcontext_tasks_update",
+        { slug: PROJECT.slug, taskId: "1", title: "Done", status: "COMPLETED" },
+      ],
+      ["vcontext_tasks_delete", { slug: PROJECT.slug, taskId: "1" }],
       ["vcontext_documents_list", { slug: PROJECT.slug }],
-      ["vcontext_documents_add", { slug: PROJECT.slug, title: "Architecture", content: "Node" }],
-      ["vcontext_documents_get", { slug: PROJECT.slug, documentId: 1 }],
-      ["vcontext_documents_update", { slug: PROJECT.slug, documentId: 1, content: "TypeScript" }],
-      ["vcontext_documents_delete", { slug: PROJECT.slug, documentId: 1 }],
+      [
+        "vcontext_documents_add",
+        { slug: PROJECT.slug, title: "Architecture", content: "Node" },
+      ],
+      ["vcontext_documents_get", { slug: PROJECT.slug, documentId: "1" }],
+      [
+        "vcontext_documents_update",
+        { slug: PROJECT.slug, documentId: "1", content: "TypeScript" },
+      ],
+      ["vcontext_documents_delete", { slug: PROJECT.slug, documentId: "1" }],
       ["vcontext_changes_list", { slug: PROJECT.slug }],
       ["vcontext_changes_add", { slug: PROJECT.slug, note: "Added tests" }],
       ["vcontext_file_context_list", { slug: PROJECT.slug }],
-      ["vcontext_file_context_upsert", { slug: PROJECT.slug, path: "src/", kind: "directory", description: "Source" }],
-      ["vcontext_file_context_delete", { slug: PROJECT.slug, fileContextId: 1 }],
+      [
+        "vcontext_file_context_upsert",
+        {
+          slug: PROJECT.slug,
+          path: "src/",
+          kind: "directory",
+          description: "Source",
+        },
+      ],
+      [
+        "vcontext_file_context_delete",
+        { slug: PROJECT.slug, fileContextId: "1" },
+      ],
       ["vcontext_prompts_list", { slug: PROJECT.slug }],
       ["vcontext_prompts_add", { slug: PROJECT.slug, prompt: "Be concise" }],
-      ["vcontext_prompts_update", { slug: PROJECT.slug, promptId: 1, prompt: "Be precise" }],
-      ["vcontext_prompts_delete", { slug: PROJECT.slug, promptId: 1 }],
+      [
+        "vcontext_prompts_update",
+        { slug: PROJECT.slug, promptId: "1", prompt: "Be precise" },
+      ],
+      ["vcontext_prompts_delete", { slug: PROJECT.slug, promptId: "1" }],
     ];
 
     for (const [name, args] of calls) {
       const tool = tools.find((candidate) => candidate.name === name);
       assert.ok(tool, `${name} is registered`);
       const result = await tool.handler(args);
-      assert.deepEqual(result.content.map((item) => item.type), ["text"]);
+      assert.deepEqual(
+        result.content.map((item) => item.type),
+        ["text"],
+      );
       const parsed: unknown = JSON.parse(result.content[0]?.text ?? "");
       assert.notEqual(parsed, undefined, `${name} returns JSON`);
     }

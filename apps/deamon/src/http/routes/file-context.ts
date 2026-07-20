@@ -1,39 +1,84 @@
 import type { Hono } from "hono";
+import { UpsertFileContextSchema } from "@repo/vcontext-mcp";
 import type { AppServices } from "../../app.js";
-import { parseId, UpsertFileContextSchema } from "@repo/vcontext-mcp";
+import { locator, readSelector, writeSelector } from "./entity-selectors.js";
+
+const UpdateFileContextSchema = UpsertFileContextSchema.partial();
 
 export function registerFileContextRoutes(app: Hono, services: AppServices) {
-  app.get("/projects/:slug/file-context", (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
-    return c.json(project.fileContext.find());
-  });
-
-  app.post("/projects/:slug/file-context", async (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
-    const body = UpsertFileContextSchema.parse(await c.req.json());
-
-    return c.json(project.fileContext.upsert(body), 201);
-  });
-
-  app.delete("/projects/:slug/file-context/:fileContextId", (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
-    return c.json({
-      deleted: project.fileContext.delete(parseId(c.req.param("fileContextId"))),
-    });
-  });
+  const service = services.application!;
+  app.get("/projects/:slug/file-context", async (c) =>
+    c.json(await service.list(locator(c), "file_context", readSelector(c))),
+  );
+  app.get("/projects/:slug/file-context/by-path", async (c) =>
+    c.json(
+      await service.getFileContextByPath(
+        locator(c),
+        c.req.query("path") ?? "",
+        readSelector(c),
+      ),
+    ),
+  );
+  app.get("/projects/:slug/file-context/:fileContextId", async (c) =>
+    c.json(
+      await service.show(
+        locator(c),
+        "file_context",
+        c.req.param("fileContextId"),
+        readSelector(c),
+      ),
+    ),
+  );
+  app.get("/projects/:slug/file-context/:fileContextId/history", async (c) =>
+    c.json(
+      await service.history(
+        locator(c),
+        "file_context",
+        c.req.param("fileContextId"),
+        readSelector(c),
+      ),
+    ),
+  );
+  app.post("/projects/:slug/file-context", async (c) =>
+    c.json(
+      await service.upsertFileContext(
+        locator(c),
+        UpsertFileContextSchema.parse(await c.req.json()),
+        writeSelector(c),
+      ),
+      201,
+    ),
+  );
+  app.post("/projects/:slug/file-context/add", async (c) =>
+    c.json(
+      await service.create(
+        locator(c),
+        "file_context",
+        UpsertFileContextSchema.parse(await c.req.json()),
+        writeSelector(c),
+      ),
+      201,
+    ),
+  );
+  app.patch("/projects/:slug/file-context/:fileContextId", async (c) =>
+    c.json(
+      await service.update(
+        locator(c),
+        "file_context",
+        c.req.param("fileContextId"),
+        UpdateFileContextSchema.parse(await c.req.json()),
+        writeSelector(c),
+      ),
+    ),
+  );
+  app.delete("/projects/:slug/file-context/:fileContextId", async (c) =>
+    c.json(
+      await service.delete(
+        locator(c),
+        "file_context",
+        c.req.param("fileContextId"),
+        writeSelector(c),
+      ),
+    ),
+  );
 }

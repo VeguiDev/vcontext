@@ -7,6 +7,7 @@ import {
   PROJECTS_ROOT,
   REGISTRY_DB_PATH,
   VCONTEXT_HOME,
+  projectDataDbPath,
   projectRoot,
 } from "./paths.js";
 
@@ -38,7 +39,7 @@ export interface CreateProjectInput {
 }
 
 export class RegistryStore {
-  private db: Database.Database;
+  readonly db: Database.Database;
 
   constructor(dbPath = REGISTRY_DB_PATH) {
     fs.mkdirSync(VCONTEXT_HOME, { recursive: true });
@@ -56,9 +57,9 @@ export class RegistryStore {
 
   findById(id: number) {
     return (
-      (this.db
-        .prepare("SELECT * FROM project WHERE id = ? LIMIT 1")
-        .get(id) as RegisteredProject | undefined) ?? null
+      (this.db.prepare("SELECT * FROM project WHERE id = ? LIMIT 1").get(id) as
+        | RegisteredProject
+        | undefined) ?? null
     );
   }
 
@@ -90,8 +91,14 @@ export class RegistryStore {
       ) as RegisteredProject;
 
     fs.mkdirSync(projectRoot(project.slug), { recursive: true });
+    const projectDb = new Database(projectDataDbPath(project.slug));
+    projectDb.close();
 
     return project;
+  }
+
+  close() {
+    this.db.close();
   }
 
   addPath(
@@ -165,12 +172,14 @@ export class RegistryStore {
 
     const now = Date.now();
 
-    return this.db
-      .prepare(
-        `INSERT OR IGNORE INTO project_link (project_id, project_b_id, created_at)
+    return (
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO project_link (project_id, project_b_id, created_at)
          VALUES (?, ?, ?)`,
-      )
-      .run(projectId, projectBId, now).changes > 0;
+        )
+        .run(projectId, projectBId, now).changes > 0
+    );
   }
 
   links(projectId: number) {

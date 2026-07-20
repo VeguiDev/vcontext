@@ -13,3 +13,7 @@ export function projectRoot(slug: string) {
 export function projectDataDbPath(slug: string) {
   return path.join(projectRoot(slug), "data.db");
 }
+
+export function projectConfigPath(slug: string) {
+  return path.join(projectRoot(slug), "project.json");
+}

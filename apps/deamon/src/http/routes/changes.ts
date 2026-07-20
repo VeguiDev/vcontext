@@ -1,27 +1,65 @@
 import type { Hono } from "hono";
-import type { AppServices } from "../../app.js";
 import { CreateChangeSchema } from "@repo/vcontext-mcp";
+import type { AppServices } from "../../app.js";
+import { locator, readSelector, writeSelector } from "./entity-selectors.js";
+
+const UpdateChangeSchema = CreateChangeSchema.partial();
 
 export function registerChangeRoutes(app: Hono, services: AppServices) {
-  app.get("/projects/:slug/changes", (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
-    return c.json(project.change.find());
-  });
-
-  app.post("/projects/:slug/changes", async (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
-    const body = CreateChangeSchema.parse(await c.req.json());
-
-    return c.json(project.change.create(body), 201);
-  });
+  const service = services.application!;
+  app.get("/projects/:slug/changes", async (c) =>
+    c.json(await service.list(locator(c), "change_note", readSelector(c))),
+  );
+  app.get("/projects/:slug/changes/:changeId", async (c) =>
+    c.json(
+      await service.show(
+        locator(c),
+        "change_note",
+        c.req.param("changeId"),
+        readSelector(c),
+      ),
+    ),
+  );
+  app.get("/projects/:slug/changes/:changeId/history", async (c) =>
+    c.json(
+      await service.history(
+        locator(c),
+        "change_note",
+        c.req.param("changeId"),
+        readSelector(c),
+      ),
+    ),
+  );
+  app.post("/projects/:slug/changes", async (c) =>
+    c.json(
+      await service.create(
+        locator(c),
+        "change_note",
+        CreateChangeSchema.parse(await c.req.json()),
+        writeSelector(c),
+      ),
+      201,
+    ),
+  );
+  app.patch("/projects/:slug/changes/:changeId", async (c) =>
+    c.json(
+      await service.update(
+        locator(c),
+        "change_note",
+        c.req.param("changeId"),
+        UpdateChangeSchema.parse(await c.req.json()),
+        writeSelector(c),
+      ),
+    ),
+  );
+  app.delete("/projects/:slug/changes/:changeId", async (c) =>
+    c.json(
+      await service.delete(
+        locator(c),
+        "change_note",
+        c.req.param("changeId"),
+        writeSelector(c),
+      ),
+    ),
+  );
 }

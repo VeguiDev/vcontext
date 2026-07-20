@@ -2,66 +2,75 @@ import type { Hono } from "hono";
 import type { AppServices } from "../../app.js";
 import {
   CreateTaskSchema,
-  parseId,
   TaskStatusSchema,
   UpdateTaskSchema,
 } from "@repo/vcontext-mcp";
+import { locator, readSelector, writeSelector } from "./entity-selectors.js";
 
 export function registerTaskRoutes(app: Hono, services: AppServices) {
-  app.get("/projects/:slug/tasks", (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
-    const status = c.req.query("status");
-
-    if (status) {
-      return c.json(project.task.find(TaskStatusSchema.parse(status)));
-    }
-
-    return c.json(project.task.find());
-  });
-
-  app.post("/projects/:slug/tasks", async (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
-    const body = CreateTaskSchema.parse(await c.req.json());
-
-    return c.json(project.task.create(body), 201);
-  });
-
-  app.patch("/projects/:slug/tasks/:taskId", async (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
-    const body = UpdateTaskSchema.parse(await c.req.json());
-    const task = project.task.update(parseId(c.req.param("taskId")), body);
-
-    if (!task) {
-      return c.json({ error: "task_not_found" }, 404);
-    }
-
-    return c.json(task);
-  });
-
-  app.delete("/projects/:slug/tasks/:taskId", (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
-    return c.json({
-      deleted: project.task.delete(parseId(c.req.param("taskId"))),
-    });
-  });
+  const service = services.application!;
+  app.get("/projects/:slug/tasks", async (c) =>
+    c.json(
+      await service.list(
+        locator(c),
+        "task",
+        readSelector(c),
+        c.req.query("status")
+          ? TaskStatusSchema.parse(c.req.query("status"))
+          : undefined,
+      ),
+    ),
+  );
+  app.get("/projects/:slug/tasks/:taskId", async (c) =>
+    c.json(
+      await service.show(
+        locator(c),
+        "task",
+        c.req.param("taskId"),
+        readSelector(c),
+      ),
+    ),
+  );
+  app.get("/projects/:slug/tasks/:taskId/history", async (c) =>
+    c.json(
+      await service.history(
+        locator(c),
+        "task",
+        c.req.param("taskId"),
+        readSelector(c),
+      ),
+    ),
+  );
+  app.post("/projects/:slug/tasks", async (c) =>
+    c.json(
+      await service.create(
+        locator(c),
+        "task",
+        CreateTaskSchema.parse(await c.req.json()),
+        writeSelector(c),
+      ),
+      201,
+    ),
+  );
+  app.patch("/projects/:slug/tasks/:taskId", async (c) =>
+    c.json(
+      await service.update(
+        locator(c),
+        "task",
+        c.req.param("taskId"),
+        UpdateTaskSchema.parse(await c.req.json()),
+        writeSelector(c),
+      ),
+    ),
+  );
+  app.delete("/projects/:slug/tasks/:taskId", async (c) =>
+    c.json(
+      await service.delete(
+        locator(c),
+        "task",
+        c.req.param("taskId"),
+        writeSelector(c),
+      ),
+    ),
+  );
 }

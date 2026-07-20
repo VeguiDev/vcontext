@@ -2,16 +2,21 @@ import type { ProjectStore } from "../storage/project-store.js";
 
 export function renderProjectContext(
   project: ProjectStore,
-  opts?: { compact?: boolean },
+  opts?: { compact?: boolean; branch?: string; snapshot_id?: string },
 ) {
   const { compact = false } = opts ?? {};
-  const prompts = project.prompt.find();
-  const documents = project.document.find();
-  const changes = project.change.find().slice(0, compact ? 5 : 20);
-  const tasks = project.task
+  const branch = opts?.snapshot_id
+    ? project.snapshot(opts.snapshot_id)
+    : project.branch(opts?.branch);
+  const prompts = branch.prompt.find();
+  const documents = branch.document.find();
+  const changes = branch.change.find().slice(0, compact ? 5 : 20);
+  const tasks = branch.task
     .find()
-    .filter((task) => task.status !== "COMPLETED" && task.status !== "CANCELLED");
-  const pathContexts = project.fileContext.find();
+    .filter(
+      (task) => task.status !== "COMPLETED" && task.status !== "CANCELLED",
+    );
+  const pathContexts = branch.fileContext.find();
 
   return [
     `Project: ${project.project.name}`,
@@ -51,10 +56,11 @@ export function renderProjectContext(
     tasks.length === 0
       ? "- No active tasks."
       : tasks
-          .map((task) =>
-            `- [${task.status}] ${task.title}${
-              task.description ? `: ${task.description}` : ""
-            }`,
+          .map(
+            (task) =>
+              `- [${task.status}] ${task.title}${
+                task.description ? `: ${task.description}` : ""
+              }`,
           )
           .join("\n"),
     "",
@@ -82,7 +88,9 @@ export function renderProjectContext(
     pathContexts.length === 0
       ? "- No path context yet."
       : pathContexts
-          .map((entry) => `- [${entry.kind}] ${entry.path}: ${entry.description}`)
+          .map(
+            (entry) => `- [${entry.kind}] ${entry.path}: ${entry.description}`,
+          )
           .join("\n"),
   ].join("\n");
 }

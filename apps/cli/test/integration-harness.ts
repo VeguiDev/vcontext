@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const REPOSITORY_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../../..",
+  "../../..",
 );
 const DAEMON_ENTRY = path.join(
   REPOSITORY_ROOT,
@@ -92,7 +92,10 @@ async function waitForHealth(
     }
 
     if (fs.existsSync(portFile) && fs.existsSync(tokenFile)) {
-      const port = Number.parseInt(fs.readFileSync(portFile, "utf8").trim(), 10);
+      const port = Number.parseInt(
+        fs.readFileSync(portFile, "utf8").trim(),
+        10,
+      );
       if (Number.isInteger(port) && port > 0) {
         try {
           const response = await fetch(`http://127.0.0.1:${port}/health`);
@@ -160,17 +163,29 @@ export async function startDaemonFixture(): Promise<DaemonFixture> {
           child.kill("SIGKILL");
           exited = await waitForExit(child, 5_000);
         }
-        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(root, {
+          recursive: true,
+          force: true,
+          maxRetries: 5,
+          retryDelay: 100,
+        });
         fs.rmSync(DAEMON_LOCK, { recursive: true, force: true });
         if (!exited) {
-          throw new IntegrationHarnessError("Daemon did not stop within 10 seconds");
+          throw new IntegrationHarnessError(
+            "Daemon did not stop within 10 seconds",
+          );
         }
       },
     };
   } catch (error) {
     child.kill("SIGKILL");
     await waitForExit(child, 5_000);
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
     fs.rmSync(DAEMON_LOCK, { recursive: true, force: true });
     throw error;
   }

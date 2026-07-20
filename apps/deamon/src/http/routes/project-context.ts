@@ -1,31 +1,20 @@
 import type { Hono } from "hono";
 import type { AppServices } from "../../app.js";
-import { renderProjectContext } from "../../render/project-context.js";
+import { locator, readSelector } from "./entity-selectors.js";
 
 export function registerProjectContextRoutes(app: Hono, services: AppServices) {
-  app.get("/projects/:slug/context", (c) => {
-    const project = services.Project(c.req.param("slug"));
-
-    if (!project) {
-      return c.json({ error: "project_not_found" }, 404);
-    }
-
+  app.get("/projects/:slug/context", async (c) => {
+    const selector = readSelector(c);
     const accept = c.req.header("accept") ?? "";
-
     if (accept.includes("application/json")) {
-      const pathContext = project.fileContext.find();
-
-      return c.json({
-        project: project.project,
-        prompts: project.prompt.find(),
-        documents: project.document.find(),
-        changes: project.change.find(),
-        tasks: project.task.find(),
-        path_context: pathContext,
-        file_context: pathContext,
-      });
+      return c.json(await services.application!.context(locator(c), selector));
     }
-
-    return c.text(renderProjectContext(project, { compact: c.req.query("compact") === "true" }));
+    return c.text(
+      await services.application!.renderContext(
+        locator(c),
+        selector,
+        c.req.query("compact") === "true",
+      ),
+    );
   });
 }

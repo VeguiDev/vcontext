@@ -82,7 +82,12 @@ function _socketRequest(
           };
 
           if (response.status >= 400) {
-            reject(new DaemonClientError(formatApiError(response)));
+            reject(
+              new DaemonClientError(
+                formatApiError(response),
+                apiExitCode(response),
+              ),
+            );
             return;
           }
 
@@ -245,7 +250,11 @@ function formatApiError(response: CliResponse): string {
       "error" in parsed &&
       typeof parsed.error === "string"
     ) {
-      return `API error ${response.status}: ${parsed.error}`;
+      const message =
+        "message" in parsed && typeof parsed.message === "string"
+          ? `: ${parsed.message}`
+          : "";
+      return `API error ${response.status}: ${parsed.error}${message}`;
     }
 
     return `API error ${response.status}`;
@@ -254,6 +263,31 @@ function formatApiError(response: CliResponse): string {
       return `API error ${response.status}: ${response.body}`;
     }
     throw error;
+  }
+}
+
+function apiExitCode(response: CliResponse) {
+  try {
+    const parsed = JSON.parse(response.body) as {
+      code?: string;
+      error?: string;
+    };
+    const code = parsed.code ?? parsed.error;
+    return (
+      {
+        VALIDATION_ERROR: 2,
+        PROJECT_NOT_FOUND: 3,
+        BRANCH_NOT_FOUND: 4,
+        SNAPSHOT_NOT_FOUND: 5,
+        RECORD_NOT_FOUND: 6,
+        MERGE_CONFLICT: 7,
+        MIGRATION_ERROR: 8,
+        migration_failed: 8,
+        DATABASE_ERROR: 9,
+      }[code ?? ""] ?? 1
+    );
+  } catch {
+    return 1;
   }
 }
 
