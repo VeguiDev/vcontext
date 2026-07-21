@@ -26,9 +26,9 @@ export interface ProjectStatus {
   slug: string;
   local_path: string | null;
   current_branch: string;
-  current_snapshot_id: string;
+  current_snapshot_id: string | null;
   head_message: string | null;
-  head_created_at: number;
+  head_created_at: number | null;
   branch_count: number;
   counts: Record<EntityType, number>;
 }

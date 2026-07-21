@@ -5,9 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPOSITORY_ROOT = path.resolve(
+const REPOSITORY_ROOT = findRepositoryRoot(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../..",
 );
 const DAEMON_ENTRY = path.join(
   REPOSITORY_ROOT,
@@ -26,6 +25,19 @@ export interface DaemonFixture {
   readonly token: string;
   readonly env: NodeJS.ProcessEnv;
   stop(): Promise<void>;
+}
+
+function findRepositoryRoot(start: string): string {
+  let current = start;
+  while (true) {
+    if (fs.existsSync(path.join(current, "pnpm-workspace.yaml")))
+      return current;
+    const parent = path.dirname(current);
+    if (parent === current) {
+      throw new Error("Could not locate the vcontext repository root");
+    }
+    current = parent;
+  }
 }
 
 class IntegrationHarnessError extends Error {

@@ -30,8 +30,10 @@ export class ProjectApplicationService {
 
   async context(locator: ProjectLocator, selector: ReadSelector = {}) {
     return this.withStore(locator, (store) => {
-      const snapshotId = this.selectSnapshot(store, selector);
-      const read = store.snapshot(snapshotId);
+      this.validateReadSelector(selector);
+      const read = selector.snapshot_id
+        ? store.snapshot(selector.snapshot_id)
+        : store.branch(selector.branch ?? store.current_branch);
       const pathContext = read.fileContext.find();
       return {
         project: store.project,
@@ -59,7 +61,9 @@ export class ProjectApplicationService {
   async status(locator: ProjectLocator): Promise<ProjectStatus> {
     return this.withStore(locator, (store) => {
       const branch = store.requireBranch(store.current_branch);
-      const head = store.requireSnapshot(branch.snapshot_id);
+      const head = branch.snapshot_id
+        ? store.requireSnapshot(branch.snapshot_id)
+        : null;
       const paths = this.projects.registry.paths(store.project.slug) ?? [];
       const local =
         paths.find(
@@ -68,7 +72,9 @@ export class ProjectApplicationService {
       const counts = Object.fromEntries(
         ENTITY_TYPES.map((type) => [
           type,
-          store.resolver.resolve(branch.snapshot_id, type).length,
+          branch.snapshot_id
+            ? store.resolver.resolve(branch.snapshot_id, type).length
+            : 0,
         ]),
       ) as ProjectStatus["counts"];
       return {
@@ -77,8 +83,8 @@ export class ProjectApplicationService {
         local_path: local?.path ?? null,
         current_branch: store.current_branch,
         current_snapshot_id: branch.snapshot_id,
-        head_message: head.message,
-        head_created_at: head.created_at,
+        head_message: head?.message ?? null,
+        head_created_at: head?.created_at ?? null,
         branch_count: store.branches.find().length,
         counts,
       };
@@ -321,7 +327,7 @@ export class ProjectApplicationService {
     return this.withStore(locator, (store) => {
       const toId = to
         ? store.resolveReference(to)
-        : store.requireBranch(store.current_branch).snapshot_id;
+        : store.requireBranchHead(store.current_branch);
       let fromId: string;
       if (from) {
         fromId = store.resolveReference(from);
@@ -513,6 +519,16 @@ export class ProjectApplicationService {
     selector: ReadSelector,
   ) {
     this.validateReadSelector(selector);
+    if (!selector.snapshot_id) {
+      const branch = store.requireBranch(selector.branch ?? store.current_branch);
+      if (branch.snapshot_id === null) {
+        return {
+          find: () => [],
+          findByRecordId: () => null,
+          history: () => [],
+        };
+      }
+    }
     const snapshotId = this.selectSnapshot(store, selector);
     return store.snapshot(snapshotId)[this.entityProperty(entityType)] as {
       find(): Array<Record<string, any>>;
@@ -535,8 +551,7 @@ export class ProjectApplicationService {
     this.validateReadSelector(selector);
     if (selector.snapshot_id)
       return store.requireSnapshot(selector.snapshot_id).id;
-    return store.requireBranch(selector.branch ?? store.current_branch)
-      .snapshot_id;
+    return store.requireBranchHead(selector.branch ?? store.current_branch);
   }
 
   private validateReadSelector(selector: ReadSelector) {

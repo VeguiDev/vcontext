@@ -22,11 +22,15 @@ import {
 } from "./application/errors.js";
 import { ProjectApplicationService } from "./application/project-application-service.js";
 import { registerVersioningRoutes } from "./http/routes/versioning.js";
+import { registerSyncRoutes } from "./http/routes/sync.js";
+import { VContextSyncError } from "@vcontext/versioning-contract";
+import type { SyncService } from "./sync/sync-service.js";
 
 export interface AppServices {
   registry: RegistryStore;
   projectService: ProjectService;
   application?: ProjectApplicationService;
+  sync?: SyncService;
   Project: (slug: string) => Promise<ProjectStore | null>;
   migrationFailures?: Map<string, Error>;
   pid?: number;
@@ -77,6 +81,11 @@ export function createApp(services: AppServices) {
       );
     }
 
+    if (error instanceof VContextSyncError) {
+      const status = error.code === "UNAUTHENTICATED" ? 401 : error.code === "FORBIDDEN" ? 403 : error.code === "NON_FAST_FORWARD" || error.code === "REF_CONFLICT" || error.code === "OBJECT_COLLISION" ? 409 : error.code === "INTERNAL_ERROR" ? 500 : 400;
+      return c.json(error.toJSON(), status as 400);
+    }
+
     console.error(error);
 
     return c.json(
@@ -99,6 +108,7 @@ export function createApp(services: AppServices) {
   registerTaskRoutes(app, services);
   registerFileContextRoutes(app, services);
   registerVersioningRoutes(app, services);
+  registerSyncRoutes(app, services);
   registerMcpRoutes(app, services);
   registerLeaseRoutes(app, services);
 

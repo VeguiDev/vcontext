@@ -50,7 +50,7 @@ describe("ProjectStore merge", { concurrency: false }, () => {
     const targetBefore = store.branch("main").snapshot_id;
 
     assert.equal(
-      store.resolver.commonAncestor(sourceBefore, targetBefore),
+      store.resolver.commonAncestor(sourceBefore!, targetBefore!),
       common,
     );
     const preview = store.merge.preview("feature/automatic", "main");

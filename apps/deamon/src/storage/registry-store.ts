@@ -38,6 +38,11 @@ export interface CreateProjectInput {
   description?: string;
 }
 
+export interface ImportProjectInput extends CreateProjectInput {
+  uuid: string;
+  slug: string;
+}
+
 export class RegistryStore {
   readonly db: Database.Database;
 
@@ -95,6 +100,16 @@ export class RegistryStore {
     projectDb.close();
 
     return project;
+  }
+
+  /** Register an already validated project directory; does not create storage. */
+  registerImported(input: ImportProjectInput) {
+    const now = Date.now();
+    if (this.findBySlug(input.slug)) throw new Error(`Project "${input.slug}" already exists`);
+    return this.db.prepare(
+      `INSERT INTO project (uuid, slug, name, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
+    ).get(input.uuid, input.slug, input.name, input.description ?? null, now, now) as RegisteredProject;
   }
 
   close() {

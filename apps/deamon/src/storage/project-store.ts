@@ -24,6 +24,9 @@ import type {
   MergePreview,
   MergeResolution,
   MergeResolutions,
+  RemoteRecord,
+  RemoteRefRecord,
+  BranchUpstreamRecord,
   SnapshotDiff,
   SnapshotOptions,
   SnapshotParentRecord,
@@ -83,6 +86,7 @@ export class ProjectStore {
   readonly db: Database.Database;
   readonly resolver: SnapshotStateResolver;
   readonly branches: ProjectBranchesStore;
+  readonly remotes: ProjectRemotesStore;
   readonly merge: ProjectMergeStore;
   private readonly configPath: string;
 
@@ -95,6 +99,7 @@ export class ProjectStore {
     this.configPath = projectConfigPath(project.slug);
     this.ensureConfig();
     this.branches = new ProjectBranchesStore(this);
+    this.remotes = new ProjectRemotesStore(this);
     this.merge = new ProjectMergeStore(this);
   }
 
@@ -140,6 +145,14 @@ export class ProjectStore {
       .get(id) as SnapshotRecord | undefined;
     if (!snapshot) throw new Error(`Snapshot "${id}" does not exist`);
     return snapshot;
+  }
+
+  requireBranchHead(name: string) {
+    const branch = this.requireBranch(name);
+    if (branch.snapshot_id === null) {
+      throw new Error(`Branch "${name}" is unborn`);
+    }
+    return branch.snapshot_id;
   }
 
   snapshotParents(id: string) {
@@ -189,8 +202,7 @@ export class ProjectStore {
     const branchPrefix = "branch:";
     const snapshotPrefix = "snapshot:";
     if (reference.startsWith(branchPrefix)) {
-      return this.requireBranch(reference.slice(branchPrefix.length))
-        .snapshot_id;
+      return this.requireBranchHead(reference.slice(branchPrefix.length));
     }
     if (reference.startsWith(snapshotPrefix)) {
       return this.requireSnapshot(reference.slice(snapshotPrefix.length)).id;
@@ -204,7 +216,18 @@ export class ProjectStore {
         `Reference "${reference}" is ambiguous; use branch:${reference} or snapshot:${reference}`,
       );
     }
-    if (branch) return branch.snapshot_id;
+    const remoteRef = this.db
+      .prepare(
+        `SELECT snapshot_id FROM remote_ref
+         WHERE remote_name || '/' || name = ? LIMIT 1`,
+      )
+      .get(reference) as { snapshot_id: string | null } | undefined;
+    if (branch) return this.requireBranchHead(branch.name);
+    if (remoteRef) {
+      if (remoteRef.snapshot_id === null)
+        throw new Error(`Remote reference "${reference}" is unborn`);
+      return remoteRef.snapshot_id;
+    }
     if (snapshot) return snapshot.id;
     throw new Error(`Reference "${reference}" does not exist`);
   }
@@ -278,15 +301,17 @@ export class ProjectStore {
       const data = normalizeCreate(entityType, input);
       validateDocumentReference(this, branch.snapshot_id, entityType, data);
       const snapshot = this.insertSnapshot(
-        [branch.snapshot_id],
+        branch.snapshot_id ? [branch.snapshot_id] : [],
         options?.message === undefined
           ? defaultMessage("Create", entityType, data)
           : options.message,
         now,
       );
+      const recordId = randomUUID();
+      this.insertRecordIdentity(recordId, entityType, now);
       const record = this.insertRevision(entityType, {
         id: randomUUID(),
-        record_id: randomUUID(),
+        record_id: recordId,
         snapshot_id: snapshot.id,
         previous_revision_id: null,
         deleted_at: null,
@@ -308,6 +333,7 @@ export class ProjectStore {
   ): EntityRecordMap[T] | null {
     return this.db.transaction(() => {
       const branch = this.requireBranch(branchName);
+      if (branch.snapshot_id === null) return null;
       const current = this.resolver.findByRecordId(
         branch.snapshot_id,
         entityType,
@@ -350,6 +376,7 @@ export class ProjectStore {
   ) {
     return this.db.transaction(() => {
       const branch = this.requireBranch(branchName);
+      if (branch.snapshot_id === null) return false;
       const current = this.resolver.findByRecordId(
         branch.snapshot_id,
         entityType,
@@ -387,9 +414,11 @@ export class ProjectStore {
   ) {
     return this.db.transaction(() => {
       const branch = this.requireBranch(branchName);
-      const current = this.resolver
-        .resolve(branch.snapshot_id, "file_context")
-        .find((record) => record.path === input.path);
+      const current = branch.snapshot_id
+        ? this.resolver
+            .resolve(branch.snapshot_id, "file_context")
+            .find((record) => record.path === input.path)
+        : undefined;
       const now = Date.now();
       const data = current
         ? {
@@ -399,15 +428,17 @@ export class ProjectStore {
           }
         : normalizeCreate("file_context", input);
       const snapshot = this.insertSnapshot(
-        [branch.snapshot_id],
+        branch.snapshot_id ? [branch.snapshot_id] : [],
         options?.message === undefined
           ? defaultMessage(current ? "Update" : "Create", "file_context", data)
           : options.message,
         now,
       );
+      const recordId = current?.record_id ?? randomUUID();
+      if (!current) this.insertRecordIdentity(recordId, "file_context", now);
       const record = this.insertRevision("file_context", {
         id: randomUUID(),
-        record_id: current?.record_id ?? randomUUID(),
+        record_id: recordId,
         snapshot_id: snapshot.id,
         previous_revision_id: current?.id ?? null,
         deleted_at: null,
@@ -468,16 +499,23 @@ export class ProjectStore {
       .get(...columns.map((column) => value[column])) as EntityRecordMap[T];
   }
 
+  insertRecordIdentity(recordId: string, entityType: EntityType, createdAt: number) {
+    this.db.prepare(
+      `INSERT INTO record_identity (record_id, entity_type, created_at)
+       VALUES (?, ?, ?)`,
+    ).run(recordId, entityType, createdAt);
+  }
+
   moveBranch(
     name: string,
-    previousSnapshotId: string,
+    previousSnapshotId: string | null,
     snapshotId: string,
     now: number,
   ) {
     const result = this.db
       .prepare(
         `UPDATE branch SET snapshot_id = ?, updated_at = ?
-         WHERE name = ? AND snapshot_id = ?`,
+         WHERE name = ? AND snapshot_id IS ?`,
       )
       .run(snapshotId, now, name, previousSnapshotId);
     if (result.changes !== 1) {
@@ -601,11 +639,12 @@ export class ProjectBranchStore {
 export class VersionedReadStore<T extends EntityType> {
   constructor(
     protected readonly store: ProjectStore,
-    protected readonly snapshotId: string,
+    protected readonly snapshotId: string | null,
     readonly entityType: T,
   ) {}
 
   find(): Array<EntityRecordMap[T]> {
+    if (this.snapshotId === null) return [];
     return sortRecords(
       this.entityType,
       this.store.resolver.resolve(this.snapshotId, this.entityType),
@@ -613,6 +652,7 @@ export class VersionedReadStore<T extends EntityType> {
   }
 
   findByRecordId(recordId: string) {
+    if (this.snapshotId === null) return null;
     return this.store.resolver.findByRecordId(
       this.snapshotId,
       this.entityType,
@@ -625,6 +665,7 @@ export class VersionedReadStore<T extends EntityType> {
   }
 
   history(recordId: string) {
+    if (this.snapshotId === null) return [];
     return this.store.resolver.history(
       this.snapshotId,
       this.entityType,
@@ -649,23 +690,29 @@ export class VersionedBranchEntityStore<
   }
 
   override find() {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return [];
     return sortRecords(
       this.entityType,
-      this.store.resolver.resolve(this.currentSnapshotId(), this.entityType),
+      this.store.resolver.resolve(snapshotId, this.entityType),
     );
   }
 
   override findByRecordId(recordId: string) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return null;
     return this.store.resolver.findByRecordId(
-      this.currentSnapshotId(),
+      snapshotId,
       this.entityType,
       recordId,
     );
   }
 
   override history(recordId: string) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return [];
     return this.store.resolver.history(
-      this.currentSnapshotId(),
+      snapshotId,
       this.entityType,
       recordId,
     );
@@ -705,7 +752,7 @@ export class VersionedBranchEntityStore<
 }
 
 export class TaskReadStore extends VersionedReadStore<"task"> {
-  constructor(store: ProjectStore, snapshotId: string) {
+  constructor(store: ProjectStore, snapshotId: string | null) {
     super(store, snapshotId, "task");
   }
 
@@ -730,9 +777,11 @@ export class TaskBranchStore extends TaskReadStore {
   }
 
   override find(status?: TaskStatus) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return [];
     const records = sortRecords(
       "task",
-      this.store.resolver.resolve(this.currentSnapshotId(), "task"),
+      this.store.resolver.resolve(snapshotId, "task"),
     );
     return status
       ? records.filter((record) => record.status === status)
@@ -740,16 +789,20 @@ export class TaskBranchStore extends TaskReadStore {
   }
 
   override findByRecordId(recordId: string) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return null;
     return this.store.resolver.findByRecordId(
-      this.currentSnapshotId(),
+      snapshotId,
       "task",
       recordId,
     );
   }
 
   override history(recordId: string) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return [];
     return this.store.resolver.history(
-      this.currentSnapshotId(),
+      snapshotId,
       "task",
       recordId,
     );
@@ -791,23 +844,29 @@ export class FileContextBranchStore extends VersionedReadStore<"file_context"> {
   }
 
   override find() {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return [];
     return sortRecords(
       "file_context",
-      this.store.resolver.resolve(this.currentSnapshotId(), "file_context"),
+      this.store.resolver.resolve(snapshotId, "file_context"),
     );
   }
 
   override findByRecordId(recordId: string) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return null;
     return this.store.resolver.findByRecordId(
-      this.currentSnapshotId(),
+      snapshotId,
       "file_context",
       recordId,
     );
   }
 
   override history(recordId: string) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return [];
     return this.store.resolver.history(
-      this.currentSnapshotId(),
+      snapshotId,
       "file_context",
       recordId,
     );
@@ -941,7 +1000,76 @@ export class ProjectBranchesStore {
   private resolveFrom(from: string) {
     const branch = this.findByName(from);
     if (branch) return branch.snapshot_id;
-    return this.store.requireSnapshot(from).id;
+    return this.store.resolveReference(from);
+  }
+}
+
+export class ProjectRemotesStore {
+  constructor(private readonly store: ProjectStore) {}
+
+  find() {
+    return this.store.db.prepare("SELECT * FROM remote ORDER BY name").all() as RemoteRecord[];
+  }
+
+  findByName(name: string) {
+    return (this.store.db.prepare("SELECT * FROM remote WHERE name = ?").get(name) as RemoteRecord | undefined) ?? null;
+  }
+
+  add(name: string, url: string) {
+    validateRemoteName(name);
+    const now = Date.now();
+    return this.store.db.prepare(
+      `INSERT INTO remote (name, url, created_at, updated_at) VALUES (?, ?, ?, ?) RETURNING *`,
+    ).get(name, normalizeRemoteUrl(url), now, now) as RemoteRecord;
+  }
+
+  setUrl(name: string, url: string) {
+    const result = this.store.db.prepare(
+      `UPDATE remote SET url = ?, updated_at = ? WHERE name = ? RETURNING *`,
+    ).get(normalizeRemoteUrl(url), Date.now(), name) as RemoteRecord | undefined;
+    if (!result) throw new Error(`Remote "${name}" does not exist`);
+    return result;
+  }
+
+  remove(name: string) {
+    const result = this.store.db.prepare("DELETE FROM remote WHERE name = ?").run(name);
+    if (result.changes !== 1) throw new Error(`Remote "${name}" does not exist`);
+    return true;
+  }
+
+  refs(remoteName?: string) {
+    const sql = remoteName
+      ? "SELECT * FROM remote_ref WHERE remote_name = ? ORDER BY name"
+      : "SELECT * FROM remote_ref ORDER BY remote_name, name";
+    return (remoteName ? this.store.db.prepare(sql).all(remoteName) : this.store.db.prepare(sql).all()) as RemoteRefRecord[];
+  }
+
+  replaceRefs(remoteName: string, refs: Array<{ name: string; snapshot_id: string | null }>) {
+    this.findByName(remoteName) ?? (() => { throw new Error(`Remote "${remoteName}" does not exist`); })();
+    return this.store.db.transaction(() => {
+      const now = Date.now();
+      this.store.db.prepare("DELETE FROM remote_ref WHERE remote_name = ?").run(remoteName);
+      const insert = this.store.db.prepare(
+        "INSERT INTO remote_ref (remote_name, name, snapshot_id, updated_at) VALUES (?, ?, ?, ?)",
+      );
+      for (const ref of refs) insert.run(remoteName, ref.name, ref.snapshot_id, now);
+      return this.refs(remoteName);
+    })();
+  }
+
+  upstream(branchName: string) {
+    return (this.store.db.prepare("SELECT * FROM branch_upstream WHERE branch_name = ?").get(branchName) as BranchUpstreamRecord | undefined) ?? null;
+  }
+
+  setUpstream(branchName: string, remoteName: string, remoteBranch: string) {
+    this.store.requireBranch(branchName);
+    if (!this.findByName(remoteName)) throw new Error(`Remote "${remoteName}" does not exist`);
+    const now = Date.now();
+    return this.store.db.prepare(
+      `INSERT INTO branch_upstream (branch_name, remote_name, remote_branch, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(branch_name) DO UPDATE SET remote_name=excluded.remote_name, remote_branch=excluded.remote_branch, updated_at=excluded.updated_at RETURNING *`,
+    ).get(branchName, remoteName, remoteBranch, now, now) as BranchUpstreamRecord;
   }
 }
 
@@ -1035,17 +1163,20 @@ export class ProjectMergeStore {
     targetBranch: string,
     resolutions?: MergeResolutions,
   ) {
-    const source = this.store.requireBranch(sourceBranch);
+    const localSource = this.store.branches.findByName(sourceBranch);
+    const sourceSnapshotId = localSource?.snapshot_id ?? this.store.resolveReference(sourceBranch);
     const target = this.store.requireBranch(targetBranch);
+    if (sourceSnapshotId === null) throw new Error(`Branch "${sourceBranch}" is unborn`);
+    if (target.snapshot_id === null) throw new Error(`Branch "${targetBranch}" is unborn`);
     const baseId = this.store.resolver.commonAncestor(
-      source.snapshot_id,
+      sourceSnapshotId,
       target.snapshot_id,
     );
     if (!baseId) throw new Error("Branches do not share a common ancestor");
 
     const baseState = this.store.resolver.resolveAll(baseId, true);
     const sourceState = this.store.resolver.resolveAll(
-      source.snapshot_id,
+      sourceSnapshotId,
       true,
     );
     const targetState = this.store.resolver.resolveAll(
@@ -1111,7 +1242,7 @@ export class ProjectMergeStore {
         source_branch: sourceBranch,
         target_branch: targetBranch,
         base_snapshot_id: baseId,
-        source_snapshot_id: source.snapshot_id,
+        source_snapshot_id: sourceSnapshotId,
         target_snapshot_id: target.snapshot_id,
         changes,
         conflicts,
@@ -1380,7 +1511,7 @@ function definedValues(input: Record<string, unknown>) {
 
 function validateDocumentReference(
   store: ProjectStore,
-  snapshotId: string,
+  snapshotId: string | null,
   entityType: EntityType,
   data: Record<string, unknown>,
 ) {
@@ -1389,10 +1520,26 @@ function validateDocumentReference(
   if (
     documentId !== null &&
     documentId !== undefined &&
-    !store.resolver.findByRecordId(snapshotId, "document", String(documentId))
+    (snapshotId === null ||
+      !store.resolver.findByRecordId(snapshotId, "document", String(documentId)))
   ) {
     throw new Error(`Document record "${String(documentId)}" does not exist`);
   }
+}
+
+function validateRemoteName(name: string) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+    throw new Error(`Invalid remote name "${name}"`);
+  }
+}
+
+function normalizeRemoteUrl(value: string) {
+  const url = new URL(value);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Remote URL must use http or https");
+  }
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
 }
 
 function defaultMessage(

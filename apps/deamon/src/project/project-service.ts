@@ -19,6 +19,7 @@ import type {
   RegisteredProject,
   RegistryStore,
 } from "../storage/registry-store.js";
+import { updateProjectJson } from "./project-metadata.js";
 
 export type MigrationMode = "apply" | "status-only" | "skip";
 
@@ -60,6 +61,10 @@ export class ProjectService {
     for (const projectPath of paths) {
       this.registry.addPath(project.slug, projectPath);
     }
+    updateProjectJson(projectConfigPath(project.slug), {
+      current_branch: "main",
+      sync_unborn_bootstrap: true,
+    });
     const handle = await this.open(project);
     handle.close();
     return project;

@@ -10,6 +10,7 @@ export interface VersionedRecord {
   deleted_at: number | null;
   created_at: number;
   updated_at: number;
+  object_hash?: string | null;
 }
 
 export interface DocumentRecord extends VersionedRecord {
@@ -45,6 +46,7 @@ export interface SnapshotRecord {
   id: string;
   message: string | null;
   created_at: number;
+  object_hash?: string | null;
 }
 
 export interface SnapshotParentRecord {
@@ -82,7 +84,29 @@ export interface SnapshotDiff {
 
 export interface BranchRecord {
   name: string;
-  snapshot_id: string;
+  snapshot_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface RemoteRecord {
+  name: string;
+  url: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface RemoteRefRecord {
+  remote_name: string;
+  name: string;
+  snapshot_id: string | null;
+  updated_at: number;
+}
+
+export interface BranchUpstreamRecord {
+  branch_name: string;
+  remote_name: string;
+  remote_branch: string;
   created_at: number;
   updated_at: number;
 }

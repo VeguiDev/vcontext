@@ -22,6 +22,14 @@ import {
   writeProjectMarker,
 } from "./runtime/project-marker.js";
 import { CLIVContextAPI } from "./vcontext-api.js";
+import { authCommand } from "./commands/auth.js";
+import { remoteCommand } from "./commands/remote.js";
+import {
+  cloneCommand,
+  fetchCommand,
+  pullCommand,
+  pushCommand,
+} from "./commands/sync.js";
 
 const args = process.argv.slice(2);
 
@@ -53,6 +61,15 @@ async function main(input: string[]) {
     return usage();
   }
   const commands: Record<string, (args: string[]) => unknown> = {
+    auth: (args) =>
+      authCommand(args, {
+        resolveCurrentOrigin: resolveCurrentRemoteOrigin,
+      }),
+    remote: (args) => remoteCommand(args, { requestValue, resolveProjectSlug }),
+    clone: (args) => cloneCommand(args, { requestValue, resolveProjectSlug }),
+    fetch: (args) => fetchCommand(args, { requestValue, resolveProjectSlug }),
+    pull: (args) => pullCommand(args, { requestValue, resolveProjectSlug }),
+    push: (args) => pushCommand(args, { requestValue, resolveProjectSlug }),
     daemon,
     init,
     projects: projectsCommand,
@@ -767,6 +784,25 @@ async function resolveProjectSlug(input: string[]) {
   );
 }
 
+async function resolveCurrentRemoteOrigin(): Promise<string | null> {
+  try {
+    const slug = await resolveProjectSlug([]);
+    const remote = await requestValue(
+      "GET",
+      `/projects/${encodeURIComponent(slug)}/remotes/origin`,
+    );
+    const value =
+      typeof remote === "string"
+        ? remote
+        : remote && typeof remote === "object" && "url" in remote
+          ? remote.url
+          : undefined;
+    return typeof value === "string" ? new URL(value).origin : null;
+  } catch {
+    return null;
+  }
+}
+
 async function resolveProjectByCurrentPath() {
   let current = process.cwd();
 
@@ -904,6 +940,12 @@ function usage() {
   console.log(`vcontext
 
 Usage:
+  vcontext auth <login|logout|status> [--host url]
+  vcontext remote <add|list|get-url|set-url|remove>
+  vcontext clone <url> [path]
+  vcontext fetch [remote] [branch]
+  vcontext pull [remote] [branch]
+  vcontext push [remote] [branch] [--force]
   vcontext daemon <start|status|stop>
   vcontext init <project name> [--description text] [--path path]
   vcontext projects

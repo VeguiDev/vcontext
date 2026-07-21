@@ -53,9 +53,9 @@ describe("ProjectStore versioning", { concurrency: false }, () => {
       ),
     );
     assert.equal(config.current_branch, "main");
-    assert.equal(config.schema_version, "2.0.0");
+    assert.equal(config.schema_version, "3.0.0");
     assert.deepEqual(config.migration.incomplete_post_migrations, []);
-    assert.equal(config.migration.backup_paths.length, 1);
+    assert.equal(config.migration.backup_paths.length, 2);
     assert.equal(
       (
         store.db.prepare("SELECT COUNT(*) AS count FROM snapshot").get() as {
@@ -82,9 +82,9 @@ describe("ProjectStore versioning", { concurrency: false }, () => {
     assert.equal(updated.record_id, created.record_id);
     assert.equal(updated.previous_revision_id, created.id);
     assert.equal(updated.created_at, created.created_at);
-    assert.equal(store.snapshot(initialSnapshot).document.find().length, 0);
+    assert.equal(store.snapshot(initialSnapshot!).document.find().length, 0);
     assert.equal(
-      store.snapshot(createSnapshot).document.findByRecordId(created.record_id)
+      store.snapshot(createSnapshot!).document.findByRecordId(created.record_id)
         ?.content,
       "Initial",
     );
@@ -107,7 +107,7 @@ describe("ProjectStore versioning", { concurrency: false }, () => {
     assert.equal(store.branch().task.delete(created.record_id), true);
     assert.equal(store.branch().task.findByRecordId(created.record_id), null);
     assert.equal(
-      store.snapshot(beforeDelete).task.findByRecordId(created.record_id)
+      store.snapshot(beforeDelete!).task.findByRecordId(created.record_id)
         ?.title,
       "Remove me",
     );
@@ -150,7 +150,7 @@ describe("ProjectStore versioning", { concurrency: false }, () => {
         "utf8",
       ),
     );
-    assert.equal(config.schema_version, "2.0.0");
+    assert.equal(config.schema_version, "3.0.0");
   });
 
   it("loads the selected branch from project.json", async () => {

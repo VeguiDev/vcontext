@@ -3,6 +3,8 @@ import fs from "node:fs";
 export interface ProjectJsonMetadata {
   current_branch?: string;
   schema_version?: string;
+  /** Internal one-shot flag used while creating a v3 project. */
+  sync_unborn_bootstrap?: boolean;
   migration?: {
     incomplete_post_migrations?: string[];
     backup_paths?: string[];

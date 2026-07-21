@@ -57,6 +57,78 @@ export function migrateVersionedProjectSchema(db: Database) {
   }
 }
 
+/** Upgrade a v2 project to the sync-capable v3 layout without changing heads. */
+export function migrateSyncProjectSchema(db: Database) {
+  createVersionedSchema(db);
+
+  if (columnNotNull(db, "branch", "snapshot_id")) {
+    db.exec(`
+      ALTER TABLE branch RENAME TO branch_v2;
+      CREATE TABLE branch (
+        name TEXT PRIMARY KEY,
+        snapshot_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (snapshot_id) REFERENCES snapshot(id)
+      );
+      INSERT INTO branch (name, snapshot_id, created_at, updated_at)
+      SELECT name, snapshot_id, created_at, updated_at FROM branch_v2;
+      DROP TABLE branch_v2;
+    `);
+  }
+
+  addColumnIfMissing(db, "snapshot", "object_hash", "TEXT");
+  for (const table of ENTITY_TABLES) {
+    addColumnIfMissing(db, table, "object_hash", "TEXT");
+  }
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS snapshot_object_hash_idx
+      ON snapshot(object_hash) WHERE object_hash IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS record_identity (
+      record_id TEXT PRIMARY KEY,
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('project_prompt','document','change_note','task','file_context')),
+      created_at INTEGER NOT NULL,
+      object_hash TEXT UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS remote (
+      name TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS remote_ref (
+      remote_name TEXT NOT NULL,
+      name TEXT NOT NULL,
+      snapshot_id TEXT,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (remote_name, name),
+      FOREIGN KEY (remote_name) REFERENCES remote(name) ON DELETE CASCADE,
+      FOREIGN KEY (snapshot_id) REFERENCES snapshot(id)
+    );
+    CREATE TABLE IF NOT EXISTS branch_upstream (
+      branch_name TEXT PRIMARY KEY,
+      remote_name TEXT NOT NULL,
+      remote_branch TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (branch_name) REFERENCES branch(name) ON DELETE CASCADE,
+      FOREIGN KEY (remote_name) REFERENCES remote(name) ON DELETE CASCADE,
+      UNIQUE(remote_name, remote_branch)
+    );
+    CREATE INDEX IF NOT EXISTS remote_ref_snapshot_idx ON remote_ref(snapshot_id);
+  `);
+
+  for (const table of ENTITY_TABLES) {
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS ${table}_object_hash_idx
+      ON ${table}(object_hash) WHERE object_hash IS NOT NULL`);
+    db.prepare(
+      `INSERT OR IGNORE INTO record_identity (record_id, entity_type, created_at)
+       SELECT record_id, ?, MIN(created_at) FROM ${table} GROUP BY record_id`,
+    ).run(table);
+  }
+}
+
 export function migrateLegacyProjectSchema(db: Database) {
   const existing = ENTITY_TABLES.find((table) => tableExists(db, table));
   if (existing && columnExists(db, existing, "record_id")) return;
@@ -458,6 +530,14 @@ function tableExists(db: Database, table: string) {
 function columnExists(db: Database, table: string, column: string) {
   const columns = db.pragma(`table_info(${table})`) as Array<{ name: string }>;
   return columns.some((entry) => entry.name === column);
+}
+
+function columnNotNull(db: Database, table: string, column: string) {
+  const columns = db.pragma(`table_info(${table})`) as Array<{
+    name: string;
+    notnull: number;
+  }>;
+  return columns.some((entry) => entry.name === column && entry.notnull === 1);
 }
 
 function addColumnIfMissing(

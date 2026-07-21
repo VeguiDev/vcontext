@@ -244,17 +244,10 @@ function formatApiError(response: CliResponse): string {
   try {
     const parsed: unknown = JSON.parse(response.body);
 
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "error" in parsed &&
-      typeof parsed.error === "string"
-    ) {
-      const message =
-        "message" in parsed && typeof parsed.message === "string"
-          ? `: ${parsed.message}`
-          : "";
-      return `API error ${response.status}: ${parsed.error}${message}`;
+    const error = apiError(parsed);
+    if (error) {
+      const message = error.message ? `: ${error.message}` : "";
+      return `API error ${response.status}: ${error.code}${message}`;
     }
 
     return `API error ${response.status}`;
@@ -268,13 +261,11 @@ function formatApiError(response: CliResponse): string {
 
 function apiExitCode(response: CliResponse) {
   try {
-    const parsed = JSON.parse(response.body) as {
-      code?: string;
-      error?: string;
-    };
-    const code = parsed.code ?? parsed.error;
+    const parsed: unknown = JSON.parse(response.body);
+    const code = apiError(parsed)?.code;
     return (
       {
+        INVALID_REQUEST: 2,
         VALIDATION_ERROR: 2,
         PROJECT_NOT_FOUND: 3,
         BRANCH_NOT_FOUND: 4,
@@ -289,6 +280,43 @@ function apiExitCode(response: CliResponse) {
   } catch {
     return 1;
   }
+}
+
+function apiError(value: unknown): { code: string; message?: string } | null {
+  if (typeof value !== "object" || value === null) return null;
+  const parsed = value as Record<string, unknown>;
+
+  if (typeof parsed.error === "string") {
+    return {
+      code: parsed.code === undefined ? parsed.error : String(parsed.code),
+      ...(typeof parsed.message === "string"
+        ? { message: parsed.message }
+        : {}),
+    };
+  }
+
+  if (
+    typeof parsed.error === "object" &&
+    parsed.error !== null &&
+    typeof (parsed.error as Record<string, unknown>).code === "string"
+  ) {
+    const nested = parsed.error as Record<string, unknown>;
+    return {
+      code: nested.code as string,
+      ...(typeof nested.message === "string" ? { message: nested.message } : {}),
+    };
+  }
+
+  if (typeof parsed.code === "string") {
+    return {
+      code: parsed.code,
+      ...(typeof parsed.message === "string"
+        ? { message: parsed.message }
+        : {}),
+    };
+  }
+
+  return null;
 }
 
 export {

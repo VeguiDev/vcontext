@@ -108,7 +108,7 @@ describe("legacy project migration", { concurrency: false }, () => {
       ["main"],
     );
     assert.equal(
-      store.requireSnapshot(branch.snapshot_id).message,
+      store.requireSnapshot(branch.snapshot_id!).message,
       "Migrate existing project data",
     );
   });
