@@ -1,21 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
+import { ProjectMarkerSchema, type ProjectMarker } from "@vcontext/versioning-contract";
 
 export const PROJECT_MARKER_DIR = ".vcontext";
 export const PROJECT_MARKER_FILE = "project.json";
 
-export interface ProjectMarker {
-  slug: string;
-  uuid: string;
-}
-
 export function writeProjectMarker(root: string, marker: ProjectMarker) {
+  const parsed = ProjectMarkerSchema.parse(marker);
   const dir = path.join(root, PROJECT_MARKER_DIR);
 
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, PROJECT_MARKER_FILE),
-    JSON.stringify(marker, null, 2) + "\n",
+    JSON.stringify(parsed, null, 2) + "\n",
   );
 }
 
@@ -26,7 +23,7 @@ export function findProjectMarker(start = process.cwd()) {
     const markerPath = path.join(current, PROJECT_MARKER_DIR, PROJECT_MARKER_FILE);
 
     if (fs.existsSync(markerPath)) {
-      const marker = JSON.parse(fs.readFileSync(markerPath, "utf-8")) as ProjectMarker;
+      const marker = ProjectMarkerSchema.parse(JSON.parse(fs.readFileSync(markerPath, "utf-8")));
 
       return {
         root: current,

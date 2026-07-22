@@ -1,6 +1,6 @@
-import path from "node:path";
 import { ProjectMigrationError } from "../project/migration-types.js";
 import type { ProjectService } from "../project/project-service.js";
+import { ProjectResolverService } from "../project/project-resolver-service.js";
 import { ENTITY_FIELDS, ENTITY_TYPES } from "../storage/snapshot-state.js";
 import type {
   EntityCreateInputMap,
@@ -22,7 +22,8 @@ import type {
 } from "./contracts.js";
 
 export class ProjectApplicationService {
-  constructor(private readonly projects: ProjectService) {}
+  private readonly resolver: ProjectResolverService;
+  constructor(private readonly projects: ProjectService, resolver?: ProjectResolverService) { this.resolver = resolver ?? new ProjectResolverService(projects); }
 
   listProjects() {
     return this.projects.registry.all();
@@ -576,7 +577,7 @@ export class ProjectApplicationService {
     locator: ProjectLocator,
     action: (store: ProjectStore) => T | Promise<T>,
   ): Promise<T> {
-    const project = this.resolveProject(locator);
+    const project = await this.resolver.resolve(locator);
     let handle: Awaited<ReturnType<ProjectService["open"]>> | undefined;
     try {
       handle = await this.projects.open(project);
@@ -592,38 +593,6 @@ export class ProjectApplicationService {
     } finally {
       handle?.close();
     }
-  }
-
-  private resolveProject(locator: ProjectLocator) {
-    if (locator.project_slug) {
-      const project = this.projects.registry.findBySlug(locator.project_slug);
-      if (project) return project;
-      throw new ApplicationError(
-        "PROJECT_NOT_FOUND",
-        `Project "${locator.project_slug}" not found`,
-      );
-    }
-    if (locator.cwd) {
-      const cwd = path.resolve(locator.cwd);
-      const match = this.projects.registry
-        .all()
-        .flatMap((project) =>
-          (this.projects.registry.paths(project.slug) ?? [])
-            .filter((entry) => entry.type === "local")
-            .map((entry) => ({ project, local: path.resolve(entry.path) })),
-        )
-        .filter(
-          ({ local }) =>
-            cwd === local ||
-            cwd.startsWith(local.endsWith(path.sep) ? local : local + path.sep),
-        )
-        .sort((a, b) => b.local.length - a.local.length)[0];
-      if (match) return match.project;
-    }
-    throw new ApplicationError(
-      "PROJECT_NOT_FOUND",
-      "Project could not be resolved; provide project_slug or cwd",
-    );
   }
 
   private normalizeError(error: unknown): Error {

@@ -26,10 +26,14 @@ export async function cloneCommand(
   const output = outputOptions(input);
   const yes = takeFlag(input, "--yes");
   const path = takeOption(input, "--path");
-  const remoteUrl = takePositional(
+  const host = takeOption(input, "--host") ?? process.env.VCONTEXT_CLOUD_URL ?? "https://cloud.vcontext.dev";
+  const remoteInput = takePositional(
     input,
     "Usage: vcontext clone <url> [path|--path path] [--yes] [--json|--quiet]",
   );
+  const remoteUrl = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remoteInput)
+    ? new URL(`/${remoteInput}`, host).toString()
+    : remoteInput;
   const destination = path ?? takeOptionalPositional(input);
   assertNoArgs(
     input,

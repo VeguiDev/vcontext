@@ -53,9 +53,9 @@ describe("ProjectStore versioning", { concurrency: false }, () => {
       ),
     );
     assert.equal(config.current_branch, "main");
-    assert.equal(config.schema_version, "3.0.0");
+    assert.equal(config.schema_version, "4.0.0");
     assert.deepEqual(config.migration.incomplete_post_migrations, []);
-    assert.equal(config.migration.backup_paths.length, 2);
+    assert.equal(config.migration.backup_paths.length, 3);
     assert.equal(
       (
         store.db.prepare("SELECT COUNT(*) AS count FROM snapshot").get() as {
@@ -150,7 +150,7 @@ describe("ProjectStore versioning", { concurrency: false }, () => {
         "utf8",
       ),
     );
-    assert.equal(config.schema_version, "3.0.0");
+    assert.equal(config.schema_version, "4.0.0");
   });
 
   it("loads the selected branch from project.json", async () => {

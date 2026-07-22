@@ -25,12 +25,15 @@ import { registerVersioningRoutes } from "./http/routes/versioning.js";
 import { registerSyncRoutes } from "./http/routes/sync.js";
 import { VContextSyncError } from "@vcontext/versioning-contract";
 import type { SyncService } from "./sync/sync-service.js";
+import type { GitObservationService } from "./git/git-observation-service.js";
+import { registerGitRoutes } from "./http/routes/git.js";
 
 export interface AppServices {
   registry: RegistryStore;
   projectService: ProjectService;
   application?: ProjectApplicationService;
   sync?: SyncService;
+  git?: GitObservationService;
   Project: (slug: string) => Promise<ProjectStore | null>;
   migrationFailures?: Map<string, Error>;
   pid?: number;
@@ -109,6 +112,7 @@ export function createApp(services: AppServices) {
   registerFileContextRoutes(app, services);
   registerVersioningRoutes(app, services);
   registerSyncRoutes(app, services);
+  registerGitRoutes(app, services);
   registerMcpRoutes(app, services);
   registerLeaseRoutes(app, services);
 

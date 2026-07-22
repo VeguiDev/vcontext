@@ -3,12 +3,19 @@ import {
   FetchResponseSchema,
   MissingResponseSchema,
   PushResponseSchema,
+  FetchV2ResponseSchema,
+  MissingV2ResponseSchema,
+  PushV2ResponseSchema,
+  RefsV2ResponseSchema,
   RefsResponseSchema,
   SyncErrorResponseSchema,
   VContextSyncError,
   type FetchRequest,
   type MissingRequest,
   type PushRequest,
+  type FetchV2Request,
+  type MissingV2Request,
+  type PushV2Request,
 } from "@vcontext/versioning-contract";
 
 const KEYRING_SERVICE = "vcontext-cli";
@@ -56,6 +63,7 @@ export class RemoteRepositoryClient {
   private readonly credentials: RemoteCredentialProvider;
   private readonly now: () => number;
   readonly endpoint: string;
+  readonly endpointV2: string | null;
   readonly origin: string;
 
   constructor(readonly remoteUrl: string, options: RemoteClientOptions = {}) {
@@ -64,7 +72,9 @@ export class RemoteRepositoryClient {
     this.now = options.now ?? Date.now;
     const parsed = new URL(remoteUrl);
     this.origin = parsed.origin;
-    this.endpoint = syncEndpoint(parsed);
+    const endpoints = syncEndpoints(parsed);
+    this.endpoint = endpoints.v1;
+    this.endpointV2 = endpoints.v2;
   }
 
   async refs() {
@@ -83,8 +93,29 @@ export class RemoteRepositoryClient {
     return PushResponseSchema.parse(await this.request("/push", input));
   }
 
+  async refsV2() {
+    if (!this.endpointV2) throw new VContextSyncError({ code: "INVALID_REQUEST", message: "Remote does not expose a stable project-id Sync v2 URL" });
+    return RefsV2ResponseSchema.parse(await this.requestAt(this.endpointV2, "/refs"));
+  }
+  async fetchV2(input: FetchV2Request) {
+    if (!this.endpointV2) throw new VContextSyncError({ code: "INVALID_REQUEST", message: "Remote does not expose Sync v2" });
+    return FetchV2ResponseSchema.parse(await this.requestAt(this.endpointV2, "/fetch", input));
+  }
+  async missingV2(input: MissingV2Request) {
+    if (!this.endpointV2) throw new VContextSyncError({ code: "INVALID_REQUEST", message: "Remote does not expose Sync v2" });
+    return MissingV2ResponseSchema.parse(await this.requestAt(this.endpointV2, "/missing", input));
+  }
+  async pushV2(input: PushV2Request) {
+    if (!this.endpointV2) throw new VContextSyncError({ code: "INVALID_REQUEST", message: "Remote does not expose Sync v2" });
+    return PushV2ResponseSchema.parse(await this.requestAt(this.endpointV2, "/push", input));
+  }
+
   private async request(path: string, body?: unknown) {
-    const url = new URL(this.endpoint + path);
+    return this.requestAt(this.endpoint, path, body);
+  }
+
+  private async requestAt(endpoint: string, path: string, body?: unknown) {
+    const url = new URL(endpoint + path);
     const credential = await this.authorizedCredential(url.origin);
     let response: Response;
     try {
@@ -156,16 +187,21 @@ export class RemoteRepositoryClient {
   }
 }
 
-function syncEndpoint(url: URL) {
+function syncEndpoints(url: URL): { v1: string; v2: string | null } {
   if (url.username || url.password || url.search || url.hash) {
     throw invalidRemoteUrl();
   }
 
   const parts = url.pathname.split("/").filter(Boolean);
-  let namespace: string;
-  let project: string;
+  let namespace: string | null = null;
+  let project: string | null = null;
+  let projectId: string | null = null;
 
-  if (parts.length === 2) {
+  if (parts.length === 4 && parts[0] === "api" && parts[1] === "v1" && parts[2] === "projects") {
+    projectId = parts[3]!;
+  } else if (parts.length === 6 && parts[0] === "api" && parts[1] === "v1" && parts[2] === "projects" && parts[4] === "sync" && parts[5] === "v2") {
+    projectId = parts[3]!;
+  } else if (parts.length === 2) {
     [namespace, project] = parts as [string, string];
   } else if (
     (parts.length === 5 || parts.length === 7) &&
@@ -181,22 +217,26 @@ function syncEndpoint(url: URL) {
   }
 
   try {
-    namespace = encodeURIComponent(decodeURIComponent(namespace));
-    project = encodeURIComponent(decodeURIComponent(project));
+    if (namespace) namespace = encodeURIComponent(decodeURIComponent(namespace));
+    if (project) project = encodeURIComponent(decodeURIComponent(project));
+    if (projectId) projectId = encodeURIComponent(decodeURIComponent(projectId));
   } catch {
     throw invalidRemoteUrl();
   }
 
-  return new URL(
-    `/api/v1/repos/${namespace}/${project}/sync/v1`,
-    url.origin,
-  ).toString();
+  if (projectId) {
+    return {
+      v1: new URL(`/api/v1/projects/${projectId}/sync/v1`, url.origin).toString(),
+      v2: new URL(`/api/v1/projects/${projectId}/sync/v2`, url.origin).toString(),
+    };
+  }
+  return { v1: new URL(`/api/v1/repos/${namespace}/${project}/sync/v1`, url.origin).toString(), v2: null };
 }
 
 function invalidRemoteUrl() {
   return new VContextSyncError({
     code: "INVALID_REQUEST",
     message:
-      "Remote URL must be /<namespace>/<project>, /api/v1/repos/<namespace>/<project>, or the full /sync/v1 endpoint",
+      "Remote URL must be /<namespace>/<project>, /api/v1/repos/<namespace>/<project>, or /api/v1/projects/<project-id>",
   });
 }

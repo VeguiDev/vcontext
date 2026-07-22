@@ -140,12 +140,17 @@ export const PROJECT_MARKER_FILE = "project.json";
 export interface ProjectMarker {
   readonly slug: string;
   readonly uuid: string;
+  readonly version?: 1;
+  readonly project?: string;
+  readonly remote?: string;
 }
 
 export interface FoundProjectMarker {
   readonly root: string;
   readonly path: string;
   readonly marker: ProjectMarker;
+  readonly legacy: boolean;
+  readonly raw: Readonly<Record<string, unknown>>;
 }
 
 export function findProjectMarker(
@@ -166,18 +171,37 @@ export function findProjectMarker(
       if (typeof marker !== "object" || marker === null) {
         throw new Error(`Invalid project marker: ${markerPath}`);
       }
+      const markerValue = marker as Record<string, unknown>;
 
-      const slug = "slug" in marker ? marker.slug : undefined;
-      const uuid = "uuid" in marker ? marker.uuid : undefined;
-
-      if (typeof slug !== "string" || typeof uuid !== "string") {
-        throw new Error(`Invalid project marker: ${markerPath}`);
+      const keys = Object.keys(markerValue).sort();
+      const legacy = keys.join(",") === "slug,uuid";
+      const canonical = keys.join(",") === "project,project_id,remote,version";
+      if (!legacy && !canonical) throw invalidMarker(markerPath);
+      let slug: string;
+      let uuid: string;
+      if (legacy) {
+        slug = typeof markerValue.slug === "string" ? markerValue.slug : "";
+        uuid = typeof markerValue.uuid === "string" ? markerValue.uuid : "";
+      } else {
+        if (markerValue.version !== 1 || typeof markerValue.project !== "string" || typeof markerValue.project_id !== "string" || typeof markerValue.remote !== "string") throw invalidMarker(markerPath);
+        const projectParts = markerValue.project.split("/");
+        if (projectParts.length !== 2 || projectParts.some((part) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(part))) throw invalidMarker(markerPath);
+        let remote: URL;
+        try { remote = new URL(markerValue.remote); } catch { throw invalidMarker(markerPath); }
+        if (!/^https?:$/.test(remote.protocol) || !remote.pathname.endsWith(`/api/v1/projects/${markerValue.project_id}`)) throw invalidMarker(markerPath);
+        slug = projectParts[1]!;
+        uuid = markerValue.project_id;
       }
+      if (!slug || !isUuid(uuid)) throw invalidMarker(markerPath);
 
       return {
         root: current,
         path: markerPath,
-        marker: { slug, uuid },
+        marker: canonical
+          ? { slug, uuid, version: 1, project: markerValue.project as string, remote: markerValue.remote as string }
+          : { slug, uuid },
+        legacy,
+        raw: markerValue,
       };
     }
 
@@ -189,6 +213,14 @@ export function findProjectMarker(
 
     current = parent;
   }
+}
+
+function invalidMarker(markerPath: string) {
+  return new Error(`Invalid project marker: ${markerPath}. Expected version 1 marker; legacy markers must contain only {slug, uuid}.`);
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 export function resolveProjectSlug(opts: {

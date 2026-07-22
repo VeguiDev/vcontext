@@ -8,6 +8,11 @@ import {
 } from "@repo/vcontext-mcp";
 
 export function registerRegistryRoutes(app: Hono, services: AppServices) {
+  app.post("/projects/resolve", async (c) => {
+    const body = z.object({ cwd: z.string().min(1) }).strict().parse(await c.req.json());
+    const resolver = new (await import("../../project/project-resolver-service.js")).ProjectResolverService(services.projectService, services.sync ? { initialize: (input) => services.sync!.initializeExisting(input) } : undefined);
+    return c.json(await resolver.resolve({ cwd: body.cwd }));
+  });
   app.get("/projects", (c) => {
     return c.json(services.registry.all());
   });

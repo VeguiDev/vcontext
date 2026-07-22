@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SYNC_PROTOCOL_VERSION } from "./constants.js";
+import { SUPPORTED_SYNC_PROTOCOL_VERSIONS } from "./constants.js";
 import { IdSchema } from "./common.js";
 
 const AbsoluteUrlSchema = z.url().refine((url) => {
@@ -15,7 +15,13 @@ export const DiscoveryDocumentSchema = z
     token_endpoint: AbsoluteUrlSchema,
     revocation_endpoint: AbsoluteUrlSchema,
     api_endpoint: AbsoluteUrlSchema,
-    supported_sync_versions: z.array(z.literal(SYNC_PROTOCOL_VERSION)).min(1),
+    supported_sync_versions: z
+      .array(z.union([z.literal(1), z.literal(2)]))
+      .min(1)
+      .refine(
+        (versions) => versions.every((version) => SUPPORTED_SYNC_PROTOCOL_VERSIONS.includes(version)),
+        "unsupported sync protocol version",
+      ),
   })
   .strict();
 

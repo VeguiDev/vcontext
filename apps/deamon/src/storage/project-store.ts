@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import type Database from "better-sqlite3";
+import { GitAwareStore } from "./git-aware-store.js";
 import { projectConfigPath } from "./paths.js";
 import {
   readProjectJson,
@@ -88,6 +89,7 @@ export class ProjectStore {
   readonly branches: ProjectBranchesStore;
   readonly remotes: ProjectRemotesStore;
   readonly merge: ProjectMergeStore;
+  readonly gitAware: GitAwareStore;
   private readonly configPath: string;
 
   private constructor(
@@ -101,6 +103,7 @@ export class ProjectStore {
     this.branches = new ProjectBranchesStore(this);
     this.remotes = new ProjectRemotesStore(this);
     this.merge = new ProjectMergeStore(this);
+    this.gitAware = new GitAwareStore(this.db);
   }
 
   static fromMigratedDatabase(
@@ -289,12 +292,18 @@ export class ProjectStore {
     this.writeConfig({ current_branch: name });
   }
 
+  assertGitWritable() {
+    const state = this.db.prepare("SELECT mode, warning FROM git_state WHERE singleton = 1").get() as { mode: string; warning: string | null } | undefined;
+    if (state?.mode === "detached") throw new Error(state.warning ?? "VContext writes are disabled while Git HEAD is detached");
+  }
+
   createEntity<T extends EntityType>(
     branchName: string,
     entityType: T,
     input: EntityCreateInputMap[T],
     options?: SnapshotOptions,
   ): EntityRecordMap[T] {
+    this.assertGitWritable();
     return this.db.transaction(() => {
       const branch = this.requireBranch(branchName);
       const now = Date.now();
@@ -331,6 +340,7 @@ export class ProjectStore {
     input: EntityUpdateInputMap[T],
     options?: SnapshotOptions,
   ): EntityRecordMap[T] | null {
+    this.assertGitWritable();
     return this.db.transaction(() => {
       const branch = this.requireBranch(branchName);
       if (branch.snapshot_id === null) return null;
@@ -374,6 +384,7 @@ export class ProjectStore {
     recordId: string,
     options?: SnapshotOptions,
   ) {
+    this.assertGitWritable();
     return this.db.transaction(() => {
       const branch = this.requireBranch(branchName);
       if (branch.snapshot_id === null) return false;
@@ -412,6 +423,7 @@ export class ProjectStore {
     input: EntityCreateInputMap["file_context"],
     options?: SnapshotOptions,
   ) {
+    this.assertGitWritable();
     return this.db.transaction(() => {
       const branch = this.requireBranch(branchName);
       const current = branch.snapshot_id
@@ -466,6 +478,19 @@ export class ProjectStore {
         "INSERT INTO snapshot (id, message, created_at) VALUES (?, ?, ?)",
       )
       .run(snapshot.id, snapshot.message, snapshot.created_at);
+    this.db.prepare(`INSERT INTO snapshot_metadata
+      (snapshot_id, author_cloud_id, author_name, author_email, git_commit_sha,
+       git_branch, git_dirty, commit_message, version, created_at, updated_at)
+      VALUES (?, NULL, ?, ?, NULL, ?, 0, ?, 1, ?, ?)`)
+      .run(
+        snapshot.id,
+        process.env.VCONTEXT_AUTHOR_NAME ?? process.env.GIT_AUTHOR_NAME ?? "Local author",
+        process.env.VCONTEXT_AUTHOR_EMAIL ?? process.env.GIT_AUTHOR_EMAIL ?? null,
+        this.current_branch,
+        snapshot.message,
+        snapshot.created_at,
+        snapshot.created_at,
+      );
     const insertParent = this.db.prepare(
       `INSERT INTO snapshot_parent (snapshot_id, parent_snapshot_id, parent_order)
        VALUES (?, ?, ?)`,

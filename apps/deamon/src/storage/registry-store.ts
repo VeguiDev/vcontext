@@ -68,6 +68,10 @@ export class RegistryStore {
     );
   }
 
+  findByUuid(uuid: string) {
+    return ((this.db.prepare("SELECT * FROM project WHERE uuid = ? LIMIT 1").get(uuid) as RegisteredProject | undefined) ?? null);
+  }
+
   findBySlug(slug: string) {
     return (
       (this.db

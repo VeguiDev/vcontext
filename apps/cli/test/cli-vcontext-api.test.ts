@@ -111,15 +111,15 @@ describe("CLIVContextAPI daemon integration", () => {
   it("reports migration status and list through the API", async () => {
     assert.ok(api);
     const status = await api.migrationStatus(PROJECT_SLUG);
-    assert.equal(status.current_version, "3.0.0");
-    assert.equal(status.latest_version, "3.0.0");
+    assert.equal(status.current_version, "4.0.0");
+    assert.equal(status.latest_version, "4.0.0");
     assert.equal(status.checksum_state, "valid");
     assert.deepEqual(status.pending, []);
 
     const list = await api.migrationList(PROJECT_SLUG);
     assert.deepEqual(
       list.migrations.map((migration) => migration.version),
-      ["1.0.0", "2.0.0", "3.0.0"],
+      ["1.0.0", "2.0.0", "3.0.0", "4.0.0"],
     );
   });
 
@@ -131,11 +131,11 @@ describe("CLIVContextAPI daemon integration", () => {
       { cwd: fixture.projectPath, env: fixture.env, encoding: "utf8" },
     );
     const status = JSON.parse(statusOutput) as { current_version: string };
-    assert.equal(status.current_version, "3.0.0");
+    assert.equal(status.current_version, "4.0.0");
 
     const runOutput = execFileSync(
       process.execPath,
-      [CLI_ENTRY, "migration", "run", PROJECT_SLUG, "--to", "3.0.0", "--json"],
+      [CLI_ENTRY, "migration", "run", PROJECT_SLUG, "--to", "4.0.0", "--json"],
       { cwd: fixture.projectPath, env: fixture.env, encoding: "utf8" },
     );
     const run = JSON.parse(runOutput) as { applied: string[] };

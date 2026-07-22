@@ -13,6 +13,10 @@ export function registerSyncRoutes(app: Hono, services: AppServices) {
     const body = z.object({ remote_url: z.url(), path: z.string().min(1), yes: z.boolean().optional() }).strict().parse(await c.req.json());
     return moved(async () => c.json(await sync.clone(body.remote_url, body.path), 201), c, body.yes ? async (location) => c.json(await sync.clone(location, body.path), 201) : undefined);
   });
+  app.post("/sync/link", async (c) => {
+    const body = z.object({ project: z.string().regex(/^[^/]+\/[^/]+$/), remote_url: z.url(), path: z.string().min(1) }).strict().parse(await c.req.json());
+    return c.json(await sync.linkExisting(body.project, body.remote_url, body.path), 201);
+  });
   app.get("/projects/:slug/remotes", async (c) => c.json(await sync.remotes(c.req.param("slug"))));
   app.post("/projects/:slug/remotes", async (c) => {
     const body = remoteBody.parse(await c.req.json());

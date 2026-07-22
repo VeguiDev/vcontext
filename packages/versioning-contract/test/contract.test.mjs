@@ -17,6 +17,12 @@ import {
   sha256,
   verifySyncObject,
   withSyncObjectHash,
+  ProjectMarkerSchema,
+  LegacyProjectMarkerSchema,
+  FetchV2RequestSchema,
+  PushV2RequestSchema,
+  SnapshotMetadataSchema,
+  SYNC_V2_LIMITS,
 } from "../dist/src/index.js";
 
 const projectId = "project-1";
@@ -210,4 +216,19 @@ test("wire errors accept only stable codes", () => {
     SyncErrorResponseSchema.safeParse({ error: { code: "MADE_UP", message: "no" } }).success,
     false,
   );
+});
+
+test("strict marker v1 and read-only legacy marker are disjoint", () => {
+  const id = "d94dfe65-9f55-4cd6-ada4-4f28bc7fb213";
+  assert.equal(ProjectMarkerSchema.safeParse({ version: 1, project_id: id, project: "acme/docs", remote: `https://cloud.example/api/v1/projects/${id}` }).success, true);
+  assert.equal(ProjectMarkerSchema.safeParse({ version: 1, project_id: id, project: "acme/docs", remote: `https://cloud.example/api/v1/projects/other`, slug: "extra" }).success, false);
+  assert.equal(LegacyProjectMarkerSchema.safeParse({ slug: "docs", uuid: id }).success, true);
+});
+
+test("sync v2 carries metadata separately and keeps v1 objects unchanged", () => {
+  const metadata = SnapshotMetadataSchema.parse({ snapshot_id: "snapshot-1", author: { cloud_id: "user-1", name: "Ada", email: "ada@example.com" }, git_commit_sha: null, git_branch: "main", git_dirty: false, commit_message: "Initial", version: 1 });
+  assert.equal(FetchV2RequestSchema.safeParse({ protocol_version: 2, project_id: projectId, have: [], have_snapshot_metadata: [{ snapshot_id: metadata.snapshot_id, version: 1 }] }).success, true);
+  assert.equal(PushV2RequestSchema.safeParse({ protocol_version: 2, project_id: projectId, request_id: "request-2", client_id: "client-1", objects: [], snapshot_metadata: [metadata], ref_updates: [] }).success, true);
+  assert.equal(PushV2RequestSchema.safeParse({ protocol_version: 1, project_id: projectId, request_id: "request-2", client_id: "client-1", objects: [], snapshot_metadata: [metadata], ref_updates: [] }).success, false);
+  assert.equal(SYNC_V2_LIMITS.fetch.max_snapshot_metadata, 500);
 });

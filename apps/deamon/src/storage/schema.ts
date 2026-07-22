@@ -129,6 +129,60 @@ export function migrateSyncProjectSchema(db: Database) {
   }
 }
 
+/** Upgrade a v3 project with Git observation and durable sync state. */
+export function migrateGitAwareProjectSchema(db: Database) {
+  migrateSyncProjectSchema(db);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS snapshot_metadata (
+      snapshot_id TEXT PRIMARY KEY,
+      author_cloud_id TEXT,
+      author_name TEXT NOT NULL,
+      author_email TEXT,
+      git_commit_sha TEXT UNIQUE,
+      git_branch TEXT,
+      git_dirty INTEGER NOT NULL CHECK(git_dirty IN (0, 1)),
+      commit_message TEXT,
+      version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (snapshot_id) REFERENCES snapshot(id) ON DELETE CASCADE,
+      CHECK(git_commit_sha IS NULL OR length(git_commit_sha) IN (40, 64))
+    );
+    CREATE TABLE IF NOT EXISTS git_state (
+      singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+      mode TEXT NOT NULL CHECK(mode IN ('branch', 'detached')),
+      branch_name TEXT,
+      detached_snapshot_id TEXT,
+      previous_branch TEXT,
+      warning TEXT,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (detached_snapshot_id) REFERENCES snapshot(id)
+    );
+    CREATE TABLE IF NOT EXISTS sync_job (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      operation TEXT NOT NULL CHECK(operation IN ('FETCH','PULL','PUSH','CREATE_REMOTE_BRANCH','LINK_SNAPSHOT_COMMIT')),
+      dedupe_key TEXT NOT NULL UNIQUE,
+      payload TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_retry_at INTEGER NOT NULL,
+      last_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sync_conflict (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      branch_name TEXT,
+      preview TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS snapshot_metadata_commit_idx ON snapshot_metadata(git_commit_sha);
+    CREATE INDEX IF NOT EXISTS sync_job_retry_idx ON sync_job(next_retry_at, id);
+    CREATE INDEX IF NOT EXISTS sync_conflict_pending_idx ON sync_conflict(resolved_at, id);
+  `);
+}
+
 export function migrateLegacyProjectSchema(db: Database) {
   const existing = ENTITY_TABLES.find((table) => tableExists(db, table));
   if (existing && columnExists(db, existing, "record_id")) return;

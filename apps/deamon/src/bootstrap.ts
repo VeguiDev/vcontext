@@ -12,6 +12,8 @@ import {
   writePid,
   writePort,
 } from "@repo/vcontext-core";
+import { SyncService } from "./sync/sync-service.js";
+import { ProjectResolverService } from "./project/project-resolver-service.js";
 
 export class AppBoostrap {
   private registry = new RegistryStore();
@@ -46,10 +48,12 @@ export class AppBoostrap {
     const idleTimeout =
       Number(process.env.VCONTEXT_IDLE_TIMEOUT_MS) || 30 * 60 * 1000;
     let server: ReturnType<typeof createServer>;
+    const sync = new SyncService(this.projects);
+    const resolver = new ProjectResolverService(this.projects, { initialize: (input) => sync.initializeExisting(input) });
     const services = {
       registry: this.registry,
       projectService: this.projects,
-      application: new ProjectApplicationService(this.projects),
+      application: new ProjectApplicationService(this.projects, resolver),
       Project: (slug: string) => this.Project(slug),
       migrationFailures,
       pid: process.pid,
@@ -62,7 +66,9 @@ export class AppBoostrap {
         }, 10);
       },
       activity,
+      sync,
     };
+    for (const project of this.registry.all()) void services.sync.drainQueue(project.slug);
     const app = createApp(services);
 
     const idleTimer = setInterval(() => {
@@ -74,6 +80,9 @@ export class AppBoostrap {
         clearInterval(idleTimer);
         services.shutdown?.();
       }
+    }, 30_000);
+    const queueTimer = setInterval(() => {
+      for (const project of this.registry.all()) void services.sync.drainQueue(project.slug);
     }, 30_000);
 
     server = createServer(async (req, res) => {

@@ -42,7 +42,7 @@ describe("ProjectService migration gate", { concurrency: false }, () => {
     assert.equal(inspection.runner.status().current_version, "0.0.0");
     assert.deepEqual(
       inspection.runner.pending().map((entry) => entry.version),
-      ["1.0.0", "2.0.0", "3.0.0"],
+      ["1.0.0", "2.0.0", "3.0.0", "4.0.0"],
     );
     inspection.close();
 
@@ -100,7 +100,7 @@ describe("ProjectService migration gate", { concurrency: false }, () => {
     assert.match(failures.get(failed.slug)?.message ?? "", /Migration failed/);
     const inspection = await service.inspect(healthy);
     try {
-      assert.equal(inspection.runner.status().current_version, "3.0.0");
+      assert.equal(inspection.runner.status().current_version, "4.0.0");
     } finally {
       inspection.close();
     }

@@ -7,6 +7,7 @@ import {
   ensureDaemon,
   rawRequest,
   request,
+  findProjectMarker,
 } from "@repo/daemon-client";
 import {
   isProcessRunning,
@@ -17,12 +18,11 @@ import {
 import { buildMcp } from "@repo/vcontext-mcp";
 import { acquireLease, releaseLease, startHeartbeat } from "./lease.js";
 import { gitRemoteUrl } from "./runtime/git.js";
-import {
-  findProjectMarker,
-  writeProjectMarker,
-} from "./runtime/project-marker.js";
+import { writeProjectMarker } from "./runtime/project-marker.js";
 import { CLIVContextAPI } from "./vcontext-api.js";
 import { authCommand } from "./commands/auth.js";
+import { identityCommand } from "./commands/identity.js";
+import { GitHooksManager } from "./runtime/git-hooks.js";
 import { remoteCommand } from "./commands/remote.js";
 import {
   cloneCommand,
@@ -65,6 +65,9 @@ async function main(input: string[]) {
       authCommand(args, {
         resolveCurrentOrigin: resolveCurrentRemoteOrigin,
       }),
+    identity: (args) => identityCommand(args, resolveCurrentRemoteOrigin),
+    git: gitCommand,
+    sync: syncQueueCommand,
     remote: (args) => remoteCommand(args, { requestValue, resolveProjectSlug }),
     clone: (args) => cloneCommand(args, { requestValue, resolveProjectSlug }),
     fetch: (args) => fetchCommand(args, { requestValue, resolveProjectSlug }),
@@ -449,7 +452,11 @@ async function resolveRightTarget(input: string[]) {
 
 async function resolveCurrentProjectSlug() {
   const marker = findProjectMarker();
-  if (marker) return marker.marker.slug;
+  if (marker) {
+    const resolved = await requestValue("POST", "/projects/resolve", { cwd: marker.root }) as { slug?: unknown };
+    if (typeof resolved.slug === "string") return resolved.slug;
+    throw new DaemonClientError("Daemon returned an invalid project resolution", 1);
+  }
   const project = await resolveProjectByCurrentPath();
   if (project) return project.slug;
   throw new DaemonClientError(
@@ -620,14 +627,24 @@ async function daemonStop() {
 
 async function init(input: string[]) {
   const output = outputOptions(input);
+  const remoteProject = takeOption(input, "--remote");
+  const cloudHost = takeOption(input, "--host") ?? "https://cloud.vcontext.dev";
   const name = collectName(input);
   const description = takeOption(input, "--description");
   const localPath = path.resolve(takeOption(input, "--path") ?? process.cwd());
 
   if (!name) {
     throw new DaemonClientError(
-      "Usage: vcontext init <project name> [--description text] [--path path]",
+      "Usage: vcontext init <project name> [--remote namespace/slug] [--host url] [--description text] [--path path]",
     );
+  }
+
+  if (remoteProject) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remoteProject)) throw new DaemonClientError("--remote must be <namespace>/<slug>", 2);
+    const linked = await requestValue("POST", "/sync/link", { project: remoteProject, remote_url: new URL(`/${remoteProject}`, cloudHost).toString(), path: localPath }) as { marker?: unknown };
+    writeProjectMarker(localPath, linked.marker as Parameters<typeof writeProjectMarker>[1]);
+    emit(linked, output);
+    return;
   }
 
   const remote = gitRemoteUrl(localPath);
@@ -653,12 +670,42 @@ async function init(input: string[]) {
   });
   const project = parseJson<{ slug: string; uuid: string }>(response);
 
-  writeProjectMarker(localPath, {
-    slug: project.slug,
-    uuid: project.uuid,
-  });
-
   emit(project, output);
+}
+
+async function gitCommand(input: string[]) {
+  const action = input.shift();
+  if (action === "hooks") {
+    const operation = input.shift();
+    if (input.length || !operation || !["install", "status", "repair", "uninstall"].includes(operation)) throw new DaemonClientError("Usage: vcontext git hooks <install|status|repair|uninstall>", 2);
+    const manager = new GitHooksManager(process.cwd());
+    const result = operation === "install" ? manager.install() : operation === "status" ? manager.status() : operation === "repair" ? manager.repair() : manager.uninstall();
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (action === "hook-event") {
+    const event = input.shift();
+    if (!event) return;
+    try {
+      const slug = await resolveProjectSlug([]);
+      const stdin = event === "pre-push" ? await readStdin() : undefined;
+      await requestValue("POST", `/projects/${encodeURIComponent(slug)}/git/events`, { event, args: input, cwd: process.cwd(), stdin });
+    } catch { /* VContext hooks never block Git. */ }
+    return;
+  }
+  throw new DaemonClientError("Usage: vcontext git hooks <install|status|repair|uninstall>", 2);
+}
+
+function readStdin(): Promise<string> {
+  return new Promise((resolve) => { const chunks: Buffer[] = []; process.stdin.on("data", (chunk) => chunks.push(Buffer.from(chunk))); process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf8"))); process.stdin.resume(); });
+}
+
+async function syncQueueCommand(input: string[]) {
+  const action = input.shift();
+  if (!action || !["status", "retry"].includes(action) || input.length) throw new DaemonClientError("Usage: vcontext sync <status|retry>", 2);
+  const slug = await resolveProjectSlug([]);
+  const value = await requestValue(action === "status" ? "GET" : "POST", `/projects/${encodeURIComponent(slug)}/sync/queue${action === "retry" ? "/retry" : ""}`);
+  console.log(JSON.stringify(value, null, 2));
 }
 
 async function projectsCommand(input: string[]) {
@@ -770,7 +817,8 @@ async function resolveProjectSlug(input: string[]) {
   const marker = findProjectMarker();
 
   if (marker) {
-    return marker.marker.slug;
+    const resolved = await requestValue("POST", "/projects/resolve", { cwd: marker.root }) as { slug?: unknown };
+    if (typeof resolved.slug === "string") return resolved.slug;
   }
 
   const currentProject = await resolveProjectByCurrentPath();
@@ -941,13 +989,16 @@ function usage() {
 
 Usage:
   vcontext auth <login|logout|status> [--host url]
+  vcontext identity <show|set> [--host url]
+  vcontext git hooks <install|status|repair|uninstall>
+  vcontext sync <status|retry>
   vcontext remote <add|list|get-url|set-url|remove>
   vcontext clone <url> [path]
   vcontext fetch [remote] [branch]
   vcontext pull [remote] [branch]
   vcontext push [remote] [branch] [--force]
   vcontext daemon <start|status|stop>
-  vcontext init <project name> [--description text] [--path path]
+  vcontext init <project name> [--remote namespace/slug] [--host url] [--description text] [--path path]
   vcontext projects
   vcontext status [project-slug] [--json|--quiet]
   vcontext doc <list|show|add|update|delete|history>

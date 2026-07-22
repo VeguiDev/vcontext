@@ -15,6 +15,7 @@ import {
   type StoredCredential,
 } from "../auth/credentials.js";
 import { assertNoArgs, emit, outputOptions, takeOption } from "./common.js";
+import { IdentityStore } from "../runtime/identity.js";
 
 const CLIENT_ID = "vcontext-cli";
 
@@ -109,6 +110,7 @@ export async function authCommand(
       ).toISOString(),
     };
     await credentials.set(origin, credential);
+    await refreshIdentity(discovery.api_endpoint, credential.access_token, fetcher, origin);
     emit(authStatusValue(credential, timestamp), output, () =>
       console.log(`Logged in to ${origin}`),
     );
@@ -143,6 +145,17 @@ export async function authCommand(
   emit({ authenticated: false, origin }, output, () =>
     console.log(`Logged out from ${origin}`),
   );
+}
+
+async function refreshIdentity(apiEndpoint: string, token: string, fetcher: typeof globalThis.fetch, origin: string) {
+  const response = await fetcher(new URL("auth/cli/me", apiEndpoint.endsWith("/") ? apiEndpoint : `${apiEndpoint}/`).toString(), {
+    headers: { accept: "application/json", authorization: `Bearer ${token}` },
+    redirect: "manual",
+  });
+  if (!response.ok) return;
+  const value = await response.json() as { id?: string; cloud_id?: string; name?: string; email?: string | null };
+  if (typeof value.name !== "string") return;
+  new IdentityStore().set(origin, { cloud_id: value.cloud_id ?? value.id ?? null, name: value.name, email: value.email ?? null });
 }
 
 export function createPkcePair(): { verifier: string; challenge: string } {
