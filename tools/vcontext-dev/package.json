@@ -1,0 +1,9 @@
+{
+  "name": "@vcontext/cli-dev",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "vcontext-dev": "./bin/vcontext-dev.mjs"
+  }
+}

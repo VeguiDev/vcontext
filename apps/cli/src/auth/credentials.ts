@@ -1,6 +1,7 @@
 import { DaemonClientError } from "@repo/daemon-client";
 
-export const VCONTEXT_KEYRING_SERVICE = "vcontext-cli";
+export const VCONTEXT_KEYRING_SERVICE =
+  process.env.VCONTEXT_KEYRING_SERVICE?.trim() || "vcontext-cli";
 
 export interface StoredCredential {
   version: 1;

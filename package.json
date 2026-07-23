@@ -7,7 +7,10 @@
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
-    "test": "pnpm -r --if-present test",
+    "test": "pnpm -r --if-present test && node --test \"tools/vcontext-dev/test/*.test.mjs\"",
+    "vcontext-dev": "node tools/vcontext-dev/bin/vcontext-dev.mjs",
+    "vcontext-dev:link": "node tools/vcontext-dev/bin/manage-link.mjs link",
+    "vcontext-dev:unlink": "node tools/vcontext-dev/bin/manage-link.mjs unlink",
     "release:version": "bun scripts/resolve-release-version.ts",
     "release:build": "bun scripts/build-release.ts"
   },

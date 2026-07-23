@@ -18,7 +18,8 @@ import {
   type PushV2Request,
 } from "@vcontext/versioning-contract";
 
-const KEYRING_SERVICE = "vcontext-cli";
+const KEYRING_SERVICE =
+  process.env.VCONTEXT_KEYRING_SERVICE?.trim() || "vcontext-cli";
 
 export interface RemoteCredential {
   version: 1;

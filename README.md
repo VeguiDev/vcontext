@@ -233,6 +233,33 @@ pnpm install
 pnpm build
 ```
 
+Run the development CLI from the repository with:
+
+```bash
+pnpm vcontext-dev --help
+```
+
+To make `vcontext-dev` available from any working directory, create a
+one-time global link:
+
+```bash
+pnpm vcontext-dev:link
+vcontext-dev --help
+```
+
+The launcher incrementally rebuilds the CLI, daemon, and their workspace
+dependencies before each invocation. It keeps development state separate in
+`~/.vcontext-dev` and uses a separate operating-system keyring service. Set
+`VCONTEXT_DEV_HOME` to choose another development data directory. If the
+daemon source changes while the development daemon is running, run
+`vcontext-dev daemon stop`; the next command starts the rebuilt daemon.
+
+Remove the global development link with:
+
+```bash
+pnpm vcontext-dev:unlink
+```
+
 ## Project structure
 
 - `apps/cli/` — CLI client (`vcontext` command)
