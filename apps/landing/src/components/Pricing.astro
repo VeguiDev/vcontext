@@ -1,0 +1,29 @@
+---
+import SectionHeading from "./SectionHeading.astro";
+---
+
+<section class="section pricing page-shell" id="pricing" aria-labelledby="pricing-title">
+  <SectionHeading
+    id="pricing-title"
+    eyebrow="Pricing"
+    title="Free today. Built to grow."
+    description="Start using the complete local context workflow now. Paid options may arrive as collaboration and hosted capabilities expand."
+  />
+  <div class="pricing-card">
+    <div class="pricing-card__intro">
+      <span>01 / EARLY ACCESS</span>
+      <h3>Free</h3>
+      <p>For developers and agents that need durable, versioned context.</p>
+    </div>
+    <div class="pricing-card__price"><strong>$0</strong><span>today</span></div>
+    <ul>
+      <li><span>✓</span> Native CLI</li>
+      <li><span>✓</span> MCP integration</li>
+      <li><span>✓</span> Local context storage</li>
+      <li><span>✓</span> Branches and snapshots</li>
+      <li><span>✓</span> History, diff, and merge</li>
+    </ul>
+    <a class="button button--accent" href="#get-started">Install VContext</a>
+  </div>
+  <p class="pricing__note">No card required. Pricing may evolve as hosted collaboration grows.</p>
+</section>

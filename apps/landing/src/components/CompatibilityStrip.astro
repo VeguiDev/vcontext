@@ -1,0 +1,30 @@
+---
+const integrations = [
+  ["Codex", "MCP"],
+  ["Claude Desktop", "MCP"],
+  ["OpenCode", "MCP"],
+  ["Terminal", "CLI"],
+  ["Git repositories", "Native"],
+  ["Any MCP client", "Protocol"],
+];
+---
+
+<section class="compatibility" aria-labelledby="compatibility-title">
+  <div class="page-shell">
+    <div class="compatibility__head">
+      <p class="eyebrow">Compatible by default</p>
+      <h2 id="compatibility-title">Use the model you want.</h2>
+      <p>VContext stays underneath your tools, not in the way of them.</p>
+    </div>
+    <div class="compatibility__grid">
+      {integrations.map(([name, type], index) => (
+        <div class="integration-card">
+          <span>{String(index + 1).padStart(2, "0")}</span>
+          <strong>{name}</strong>
+          <small>{type}</small>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+

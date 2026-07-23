@@ -1,0 +1,63 @@
+---
+import SectionHeading from "./SectionHeading.astro";
+
+const features = [
+  {
+    number: "01",
+    title: "Context that survives the session",
+    body: "Store architecture notes, prompts, tasks, decisions, and codebase knowledge once. Pick them up from any compatible agent later.",
+    meta: "Durable by design",
+  },
+  {
+    number: "02",
+    title: "CLI and MCP, one source of truth",
+    body: "Work directly from your terminal or let models read and write context through MCP. Both surfaces resolve to the same project history.",
+    meta: "Agent-native access",
+  },
+  {
+    number: "03",
+    title: "Version everything that matters",
+    body: "Branches, immutable snapshots, history, diffs, and merges bring Git-like control to the knowledge your agents depend on.",
+    meta: "Branch-aware",
+  },
+  {
+    number: "04",
+    title: "Local first. Always useful.",
+    body: "A lightweight daemon and project-scoped SQLite storage keep your context fast and available without requiring a cloud account.",
+    meta: "Works offline",
+  },
+  {
+    number: "05",
+    title: "Built around your repository",
+    body: "Attach descriptions to files and directories, track change notes, and let each agent understand where work belongs before editing.",
+    meta: "Git-aware context",
+  },
+  {
+    number: "06",
+    title: "Share when the project grows",
+    body: "Connect VContext Cloud to sync branches, collaborate through shared projects, and move the same context between machines and teammates.",
+    meta: "Optional Cloud sync",
+  },
+];
+---
+
+<section class="section page-shell" id="features" aria-labelledby="features-title">
+  <SectionHeading
+    id="features-title"
+    eyebrow="Capabilities"
+    title="Everything your models need. Nothing they need to relearn."
+    description="VContext turns scattered agent memory into explicit, inspectable project knowledge."
+  />
+  <div class="feature-grid">
+    {features.map((feature) => (
+      <article class="feature-card">
+        <div class="feature-card__number">{feature.number}</div>
+        <div>
+          <h3>{feature.title}</h3>
+          <p>{feature.body}</p>
+        </div>
+        <span class="feature-card__meta">{feature.meta}</span>
+      </article>
+    ))}
+  </div>
+</section>

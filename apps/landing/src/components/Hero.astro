@@ -1,0 +1,51 @@
+---
+import InstallCommand from "./InstallCommand.astro";
+---
+
+<section class="hero page-shell" aria-labelledby="hero-title">
+    <div class="hero__eyebrow">
+      <span class="status-dot" aria-hidden="true"></span>
+      Local-first context infrastructure
+    </div>
+
+    <h1 id="hero-title">
+      Git for AI
+      <span>context.</span>
+    </h1>
+
+    <div class="hero__content">
+      <p class="hero__lede">
+        Keep decisions, tasks, docs, and codebase knowledge in one versioned
+        layer—so every model can start with the context the last one left behind.
+      </p>
+      <InstallCommand />
+    </div>
+
+    <div class="context-map" aria-label="Models sharing context through VContext">
+      <div class="context-map__label">
+        <span>Live context graph</span>
+        <span class="context-map__ready"><i></i> Ready</span>
+      </div>
+      <div class="context-map__body">
+        <div class="model-stack">
+          <div class="model-node"><span>01</span><strong>Codex</strong><small>MCP connected</small></div>
+          <div class="model-node"><span>02</span><strong>Claude</strong><small>MCP connected</small></div>
+          <div class="model-node"><span>03</span><strong>OpenCode</strong><small>MCP connected</small></div>
+        </div>
+        <div class="context-map__route" aria-hidden="true"><span></span><i></i><span></span></div>
+        <div class="context-repo">
+          <div class="context-repo__head">
+            <span class="context-repo__mark">v</span>
+            <div><strong>shared/context</strong><small>branch: main</small></div>
+          </div>
+          <ul>
+            <li><span>docs</span><strong>12</strong></li>
+            <li><span>tasks</span><strong>08</strong></li>
+            <li><span>changes</span><strong>31</strong></li>
+            <li><span>file context</span><strong>46</strong></li>
+          </ul>
+          <div class="context-repo__foot"><span>snapshot</span><code>8ef92a1</code></div>
+        </div>
+      </div>
+    </div>
+  </section>

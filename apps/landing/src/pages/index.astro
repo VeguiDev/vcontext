@@ -1,0 +1,27 @@
+---
+import CloudSection from "../components/CloudSection.astro";
+import CompatibilityStrip from "../components/CompatibilityStrip.astro";
+import FeatureGrid from "../components/FeatureGrid.astro";
+import FinalCta from "../components/FinalCta.astro";
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import Hero from "../components/Hero.astro";
+import Pricing from "../components/Pricing.astro";
+import Workflow from "../components/Workflow.astro";
+import Layout from "../layouts/Layout.astro";
+---
+
+<Layout>
+  <a class="skip-link" href="#hero-title">Skip to content</a>
+  <Header />
+  <main>
+    <Hero />
+    <FeatureGrid />
+    <Workflow />
+    <CompatibilityStrip />
+    <CloudSection />
+    <Pricing />
+    <FinalCta />
+  </main>
+  <Footer />
+</Layout>

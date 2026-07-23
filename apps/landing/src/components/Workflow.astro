@@ -1,0 +1,64 @@
+---
+import SectionHeading from "./SectionHeading.astro";
+
+const steps = [
+  {
+    numeral: "I",
+    title: "Install",
+    body: "One command installs the native CLI. The daemon starts automatically when VContext needs it.",
+  },
+  {
+    numeral: "II",
+    title: "Create your context layer",
+    body: "Initialize a project, record the knowledge that matters, and connect any MCP-compatible agent.",
+  },
+  {
+    numeral: "III",
+    title: "Keep every model in sync",
+    body: "Agents read the same branch-aware context locally. Add Cloud only when you want remote sync or collaboration.",
+  },
+];
+---
+
+<section class="section section--dark" id="workflow" aria-labelledby="workflow-title">
+  <div class="page-shell">
+    <SectionHeading
+      id="workflow-title"
+      eyebrow="How it works"
+      title="Install. Connect. Keep moving."
+      description="No context archaeology. No hand-written catch-up prompt every time you switch tools."
+      invert
+    />
+    <div class="workflow-grid">
+      <div class="workflow-steps">
+        {steps.map((step) => (
+          <article class="workflow-step">
+            <span>{step.numeral}</span>
+            <div><h3>{step.title}</h3><p>{step.body}</p></div>
+          </article>
+        ))}
+      </div>
+      <div class="terminal-window" aria-label="VContext terminal example">
+        <div class="terminal-window__bar">
+          <div><i></i><i></i><i></i></div>
+          <span>vcontext — project setup</span>
+          <span>01</span>
+        </div>
+        <div class="terminal-window__body">
+          <p><span>$</span> vcontext init api-platform --path .</p>
+          <p class="terminal-success">✓ Project registered on branch main</p>
+          <p><span>$</span> vcontext doc add --title "Architecture" \</p>
+          <p class="terminal-indent">--content "Hono API, SQLite context store"</p>
+          <p class="terminal-success">✓ Document created · snapshot 8ef92a1</p>
+          <p><span>$</span> vcontext give-context api-platform</p>
+          <div class="terminal-output">
+            <span>project</span><strong>api-platform</strong>
+            <span>branch</span><strong>main</strong>
+            <span>context</span><strong>ready for agents</strong>
+          </div>
+          <p class="terminal-cursor"><span>$</span> <i></i></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,19 @@
+---
+interface Props {
+  id: string;
+  eyebrow: string;
+  title: string;
+  description?: string;
+  invert?: boolean;
+}
+
+const { id, eyebrow, title, description, invert = false } = Astro.props;
+---
+
+<div class:list={["section-heading", { "section-heading--invert": invert }]}>
+  <p class="eyebrow">{eyebrow}</p>
+  <div class="section-heading__copy">
+    <h2 id={id}>{title}</h2>
+    {description && <p>{description}</p>}
+  </div>
+</div>

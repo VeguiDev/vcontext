@@ -1,0 +1,70 @@
+---
+interface Props {
+  id?: string;
+  inverted?: boolean;
+}
+
+const { id = "hero-install", inverted = false } = Astro.props;
+---
+
+<div class:list={["install-command", { "install-command--inverted": inverted }]} data-install-command>
+  <div class="install-command__topline">
+    <div class="install-tabs" role="tablist" aria-label="Installation shell">
+      <button type="button" role="tab" aria-selected="true" aria-controls={`${id}-command`} data-shell="shell">Shell</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls={`${id}-command`} data-shell="powershell">PowerShell</button>
+    </div>
+    <span class="install-command__hint">One line. That’s it.</span>
+  </div>
+  <div class="install-command__line">
+    <span aria-hidden="true">$</span>
+    <code id={`${id}-command`} data-command-value>curl -fsSL https://vcontext.dev/install.sh | bash</code>
+    <button class="copy-button" type="button" data-copy-button aria-label="Copy install command"><span data-copy-label>Copy</span></button>
+  </div>
+  <p class="sr-only" aria-live="polite" data-copy-status></p>
+</div>
+
+<script>
+  const commands = {
+    shell: "curl -fsSL https://vcontext.dev/install.sh | bash",
+    powershell: "irm https://vcontext.dev/install.ps1 | iex",
+  };
+
+  document.querySelectorAll<HTMLElement>("[data-install-command]").forEach((root) => {
+    const output = root.querySelector<HTMLElement>("[data-command-value]");
+    const tabs = root.querySelectorAll<HTMLButtonElement>("[data-shell]");
+    const copyButton = root.querySelector<HTMLButtonElement>("[data-copy-button]");
+    const copyLabel = root.querySelector<HTMLElement>("[data-copy-label]");
+    const status = root.querySelector<HTMLElement>("[data-copy-status]");
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const shell = tab.dataset.shell as keyof typeof commands;
+        if (!output || !commands[shell]) return;
+        output.textContent = commands[shell];
+        tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+      });
+    });
+    copyButton?.addEventListener("click", async () => {
+      const value = output?.textContent?.trim();
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch {
+        const textarea = document.createElement("textarea");
+        textarea.value = value;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+      if (copyLabel) copyLabel.textContent = "Copied";
+      if (status) status.textContent = "Install command copied to clipboard.";
+      window.setTimeout(() => {
+        if (copyLabel) copyLabel.textContent = "Copy";
+        if (status) status.textContent = "";
+      }, 1800);
+    });
+  });
+</script>
+

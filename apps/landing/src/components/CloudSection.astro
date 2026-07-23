@@ -1,0 +1,62 @@
+---
+import SectionHeading from "./SectionHeading.astro";
+---
+
+<section class="section cloud-section page-shell" id="cloud" aria-labelledby="cloud-title">
+  <SectionHeading
+    id="cloud-title"
+    eyebrow="VContext Cloud"
+    title="Local by default. Shared when you need it."
+    description="Keep the local workflow you already trust, then add a remote when context needs to travel across people, machines, or agents."
+  />
+  <div class="cloud-grid">
+    <div class="cloud-copy">
+      <div class="cloud-copy__items">
+        <article>
+          <span>01</span>
+          <div>
+            <h3>Sync the same history</h3>
+            <p>Push and pull versioned context without flattening it into another document or losing branch history.</p>
+          </div>
+        </article>
+        <article>
+          <span>02</span>
+          <div>
+            <h3>Organize shared projects</h3>
+            <p>Create personal or organization workspaces and keep team context attached to the project it describes.</p>
+          </div>
+        </article>
+        <article>
+          <span>03</span>
+          <div>
+            <h3>Move between machines</h3>
+            <p>Clone a context repository and continue from its current branch and snapshot wherever the work moves next.</p>
+          </div>
+        </article>
+      </div>
+      <a class="button button--dark" href="https://app.vcontext.dev" target="_blank" rel="noreferrer">
+        Open VContext Cloud <span aria-hidden="true">↗</span>
+      </a>
+    </div>
+    <div class="cloud-console" aria-label="VContext Cloud project overview">
+      <div class="cloud-console__bar">
+        <div class="cloud-console__brand">
+          <img src="/vcontext-iso.webp" alt="" width="24" height="24" />
+          <span>vcontext / platform</span>
+        </div>
+        <span class="cloud-console__sync"><i></i> Synced</span>
+      </div>
+      <div class="cloud-console__project">
+        <div><span>PROJECT</span><h3>api-platform</h3><p>Shared context for the platform team.</p></div>
+        <span class="cloud-console__private">PRIVATE</span>
+      </div>
+      <div class="cloud-console__branches">
+        <div class="cloud-console__table-head"><span>Branch</span><span>Snapshot</span><span>Updated</span></div>
+        <div class="cloud-console__row cloud-console__row--active"><span><i></i> main <small>default</small></span><code>8ef92a1</code><time>now</time></div>
+        <div class="cloud-console__row"><span><i></i> auth-flow</span><code>71ca48d</code><time>8m</time></div>
+        <div class="cloud-console__row"><span><i></i> api-v2</span><code>2db7e6c</code><time>2h</time></div>
+      </div>
+      <div class="cloud-console__command"><span>$</span><code>vcontext pull origin main</code><strong>Up to date</strong></div>
+    </div>
+  </div>
+</section>

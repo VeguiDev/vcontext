@@ -1,0 +1,22 @@
+---
+import Brand from "./Brand.astro";
+---
+
+<footer class="site-footer">
+  <div class="page-shell site-footer__grid">
+    <div class="site-footer__brand">
+      <Brand />
+      <p>Durable, versioned context for AI coding agents. Local first, shared when you need it.</p>
+    </div>
+    <div class="site-footer__links">
+      <div><h2>Product</h2><a href="#features">Features</a><a href="#workflow">How it works</a><a href="#pricing">Pricing</a></div>
+      <div><h2>Cloud</h2><a href="#cloud">Overview</a><a href="https://app.vcontext.dev" target="_blank" rel="noreferrer">Open app ↗</a></div>
+      <div><h2>Install</h2><a href="/install.sh">Shell script</a><a href="/install.ps1">PowerShell</a></div>
+    </div>
+  </div>
+  <div class="page-shell site-footer__bottom">
+    <span>© {new Date().getFullYear()} VContext</span>
+    <span><i></i> Local-first infrastructure</span>
+  </div>
+</footer>
+

@@ -1,0 +1,14 @@
+---
+interface Props {
+  compact?: boolean;
+}
+
+const { compact = false } = Astro.props;
+---
+
+<a class:list={["brand", { "brand--compact": compact }]} href="/" aria-label="VContext home">
+  <img src="/vcontext-iso.webp" alt="" width="36" height="36" />
+  <span>vcontext</span>
+  <sup>TM</sup>
+</a>
+
