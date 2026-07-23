@@ -410,7 +410,6 @@ code {
   gap: 0.45rem;
 }
 .context-map__ready i,
-.cloud-console__sync i,
 .site-footer__bottom i {
   width: 0.45rem;
   height: 0.45rem;
@@ -805,121 +804,20 @@ code {
   font-size: 0.85rem;
   line-height: 1.6;
 }
-.cloud-console {
+.cloud-product-shot {
+  aspect-ratio: 16 / 10;
+  margin: 0;
+  overflow: hidden;
   border: 1px solid var(--ink);
   background: var(--white);
   box-shadow: 1rem 1rem 0 var(--ink);
 }
-.cloud-console__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 4rem;
-  padding-inline: 1.2rem;
-  border-bottom: 1px solid var(--line-strong);
-}
-.cloud-console__brand,
-.cloud-console__sync {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  font: 700 0.68rem var(--mono);
-}
-.cloud-console__brand img {
-  width: 1.5rem;
-  height: 1.5rem;
-  object-fit: contain;
-}
-.cloud-console__sync {
-  font-size: 0.62rem;
-}
-.cloud-console__project {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  padding: clamp(1.5rem, 3vw, 2.4rem);
-  border-bottom: 1px solid var(--line);
-}
-.cloud-console__project > div > span,
-.cloud-console__private {
-  font: 700 0.58rem var(--mono);
-  letter-spacing: 0.08em;
-}
-.cloud-console__project h3 {
-  margin: 0.55rem 0;
-  font: 900 2rem var(--display);
-  letter-spacing: -0.05em;
-  text-transform: uppercase;
-}
-.cloud-console__project p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-.cloud-console__private {
-  padding: 0.45rem 0.55rem;
-  border: 1px solid var(--line);
-}
-.cloud-console__table-head,
-.cloud-console__row {
-  display: grid;
-  grid-template-columns: 1.4fr 0.8fr 0.5fr;
-  align-items: center;
-  padding: 0.8rem 1.2rem;
-}
-.cloud-console__table-head {
-  color: var(--muted);
-  border-bottom: 1px solid var(--line);
-  font: 0.55rem var(--mono);
-  text-transform: uppercase;
-}
-.cloud-console__row {
-  min-height: 3.7rem;
-  border-bottom: 1px solid var(--line);
-  font-size: 0.72rem;
-}
-.cloud-console__row > span {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 700;
-}
-.cloud-console__row i {
-  width: 0.5rem;
-  height: 0.5rem;
-  border: 1px solid var(--ink);
-  border-radius: 50%;
-}
-.cloud-console__row--active i {
-  background: var(--accent);
-}
-.cloud-console__row small {
-  padding: 0.2rem 0.35rem;
-  background: var(--paper-deep);
-  font: 0.48rem var(--mono);
-  text-transform: uppercase;
-}
-.cloud-console__row code,
-.cloud-console__row time {
-  color: var(--muted);
-  font: 0.65rem var(--mono);
-}
-.cloud-console__command {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.8rem;
-  margin: 1.2rem;
-  padding: 1rem;
-  color: var(--white);
-  background: var(--ink);
-  font-size: 0.67rem;
-}
-.cloud-console__command > span,
-.cloud-console__command strong {
-  color: var(--accent);
-}
-.cloud-console__command strong {
-  font: 500 0.67rem var(--mono);
+.cloud-product-shot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 42% center;
 }
 
 /* Pricing and footer */
@@ -1126,6 +1024,9 @@ code {
   .final-cta__inner {
     grid-template-columns: 1fr;
   }
+  .cloud-product-shot {
+    aspect-ratio: 16 / 9;
+  }
   .hero__lede {
     max-width: 46rem;
   }
@@ -1230,22 +1131,9 @@ code {
   .terminal-window__bar > span:first-of-type {
     display: none;
   }
-  .cloud-console {
+  .cloud-product-shot {
+    aspect-ratio: 4 / 3;
     box-shadow: 0.55rem 0.55rem 0 var(--ink);
-  }
-  .cloud-console__row,
-  .cloud-console__table-head {
-    grid-template-columns: 1fr auto;
-  }
-  .cloud-console__row time,
-  .cloud-console__table-head span:last-child {
-    display: none;
-  }
-  .cloud-console__command {
-    grid-template-columns: auto 1fr;
-  }
-  .cloud-console__command strong {
-    grid-column: 2;
   }
   .site-footer__links {
     grid-template-columns: repeat(2, 1fr);
