@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { DaemonClientError } from "@repo/daemon-client";
+import { getUi } from "../ui/index.js";
 import {
   DiscoveryDocumentSchema,
   TokenResponseSchema,
@@ -75,7 +76,10 @@ export async function authCommand(
   const now = dependencies.now ?? Date.now;
 
   if (subcommand === "login") {
-    const discovery = await discover(origin, fetcher);
+    const discovery = await getUi().run(
+      "Discovering VContext authentication",
+      () => discover(origin, fetcher),
+    );
     const { verifier, challenge } = createPkcePair();
     const state = randomBase64Url(32);
     const authorization = await (
@@ -110,9 +114,14 @@ export async function authCommand(
       ).toISOString(),
     };
     await credentials.set(origin, credential);
-    await refreshIdentity(discovery.api_endpoint, credential.access_token, fetcher, origin);
+    await refreshIdentity(
+      discovery.api_endpoint,
+      credential.access_token,
+      fetcher,
+      origin,
+    );
     emit(authStatusValue(credential, timestamp), output, () =>
-      console.log(`Logged in to ${origin}`),
+      getUi().success(`Logged in to ${origin}`),
     );
     return;
   }
@@ -121,15 +130,15 @@ export async function authCommand(
   if (subcommand === "status") {
     if (!credential) {
       emit({ authenticated: false, origin }, output, () =>
-        console.log(`Not logged in to ${origin}`),
+        getUi().info(`Not logged in to ${origin}`),
       );
       return;
     }
     credential = await refreshIfNeeded(credential, credentials, fetcher, now());
     emit(authStatusValue(credential, now()), output, (value) => {
       const status = value as ReturnType<typeof authStatusValue>;
-      console.log(`Logged in to ${status.origin}`);
-      console.log(`Access token expires at ${status.expires_at}`);
+      getUi().success(`Logged in to ${status.origin}`);
+      getUi().note(`Access token expires at ${status.expires_at}`);
     });
     return;
   }
@@ -143,19 +152,39 @@ export async function authCommand(
   }
   await credentials.delete(origin);
   emit({ authenticated: false, origin }, output, () =>
-    console.log(`Logged out from ${origin}`),
+    getUi().success(`Logged out from ${origin}`),
   );
 }
 
-async function refreshIdentity(apiEndpoint: string, token: string, fetcher: typeof globalThis.fetch, origin: string) {
-  const response = await fetcher(new URL("auth/cli/me", apiEndpoint.endsWith("/") ? apiEndpoint : `${apiEndpoint}/`).toString(), {
-    headers: { accept: "application/json", authorization: `Bearer ${token}` },
-    redirect: "manual",
-  });
+async function refreshIdentity(
+  apiEndpoint: string,
+  token: string,
+  fetcher: typeof globalThis.fetch,
+  origin: string,
+) {
+  const response = await fetcher(
+    new URL(
+      "auth/cli/me",
+      apiEndpoint.endsWith("/") ? apiEndpoint : `${apiEndpoint}/`,
+    ).toString(),
+    {
+      headers: { accept: "application/json", authorization: `Bearer ${token}` },
+      redirect: "manual",
+    },
+  );
   if (!response.ok) return;
-  const value = await response.json() as { id?: string; cloud_id?: string; name?: string; email?: string | null };
+  const value = (await response.json()) as {
+    id?: string;
+    cloud_id?: string;
+    name?: string;
+    email?: string | null;
+  };
   if (typeof value.name !== "string") return;
-  new IdentityStore().set(origin, { cloud_id: value.cloud_id ?? value.id ?? null, name: value.name, email: value.email ?? null });
+  new IdentityStore().set(origin, {
+    cloud_id: value.cloud_id ?? value.id ?? null,
+    name: value.name,
+    email: value.email ?? null,
+  });
 }
 
 export function createPkcePair(): { verifier: string; challenge: string } {

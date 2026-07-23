@@ -135,7 +135,16 @@ describe("CLIVContextAPI daemon integration", () => {
 
     const runOutput = execFileSync(
       process.execPath,
-      [CLI_ENTRY, "migration", "run", PROJECT_SLUG, "--to", "4.0.0", "--json"],
+      [
+        CLI_ENTRY,
+        "migration",
+        "run",
+        PROJECT_SLUG,
+        "--to",
+        "4.0.0",
+        "--json",
+        "--yes",
+      ],
       { cwd: fixture.projectPath, env: fixture.env, encoding: "utf8" },
     );
     const run = JSON.parse(runOutput) as { applied: string[] };

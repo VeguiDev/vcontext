@@ -30,36 +30,47 @@ import {
   pullCommand,
   pushCommand,
 } from "./commands/sync.js";
+import { configureUi, getUi, parseGlobalOptions } from "./ui/index.js";
+import { errorData } from "./ui/errors.js";
+import { VCONTEXT_VERSION } from "./version.js";
+import {
+  renderBranch,
+  renderBranches,
+  renderDeleted,
+  renderDiff,
+  renderEntity,
+  renderEntityList,
+  renderHistory,
+  renderMigration,
+  renderProjects,
+  renderSnapshot,
+  renderSnapshots,
+  renderStatus,
+} from "./ui/renderers.js";
 
-const args = process.argv.slice(2);
+/** Run the CLI without assuming how the JavaScript runtime was started. */
+export async function runCli(args = process.argv.slice(2)): Promise<void> {
+  const globalOptions = parseGlobalOptions(args);
+  configureUi(globalOptions);
 
-try {
-  await main(args);
-} catch (error) {
-  if (error instanceof DaemonClientError) {
-    console.error(
-      process.env.VCONTEXT_DEBUG === "1" && error.stack
-        ? error.stack
-        : error.message,
-    );
-    process.exit(error.exitCode);
+  try {
+    await main(args);
+  } catch (error) {
+    getUi().error(errorData(error));
+    process.exitCode = error instanceof DaemonClientError ? error.exitCode : 1;
   }
-
-  console.error(
-    error instanceof Error
-      ? process.env.VCONTEXT_DEBUG === "1"
-        ? error.stack
-        : error.message
-      : String(error),
-  );
-  process.exit(1);
 }
 
+if (process.env.VCONTEXT_EMBEDDED_ENTRY !== "1") {
+  await runCli();
+}
 async function main(input: string[]) {
   const command = input.shift();
+  if (getUi().options.version) return version();
   if (command === undefined || command === "-h" || command === "--help") {
-    return usage();
+    return usage(command);
   }
+  if (getUi().options.help) return usage(command);
   const commands: Record<string, (args: string[]) => unknown> = {
     auth: (args) =>
       authCommand(args, {
@@ -128,6 +139,7 @@ async function entityCommand(entity: EntityCommandType, input: string[]) {
     return emit(
       await requestValue("GET", `/projects/${slug}/${route}?${read}`),
       output,
+      (value) => renderEntityList(entity, value, getUi()),
     );
   }
 
@@ -142,6 +154,7 @@ async function entityCommand(entity: EntityCommandType, input: string[]) {
         `/projects/${slug}/file-context/by-path?${read}`,
       ),
       output,
+      (value) => renderEntity(entity, value, getUi()),
     );
   }
 
@@ -149,6 +162,8 @@ async function entityCommand(entity: EntityCommandType, input: string[]) {
     const updateBody =
       subcommand === "update" ? entityInput(entity, input, true) : undefined;
     const target = await resolveRightTarget(input);
+    if (subcommand === "delete")
+      await confirmDestructive("Delete selected record", getUi().options.yes);
     const suffix = subcommand === "history" ? "/history" : "";
     const method =
       subcommand === "update"
@@ -166,6 +181,12 @@ async function entityCommand(entity: EntityCommandType, input: string[]) {
         updateBody,
       ),
       output,
+      (value) =>
+        subcommand === "history"
+          ? renderHistory(entity, value, getUi())
+          : subcommand === "delete"
+            ? renderDeleted(value, getUi(), entity)
+            : renderEntity(entity, value, getUi()),
     );
   }
 
@@ -184,6 +205,7 @@ async function entityCommand(entity: EntityCommandType, input: string[]) {
         body,
       ),
       output,
+      (value) => renderEntity(entity, value, getUi()),
     );
   }
 
@@ -288,7 +310,11 @@ function requiredMissing(name: string): never {
 async function statusCommand(input: string[]) {
   const output = outputOptions(input);
   const slug = await resolveProjectSlug(input);
-  return emit(await requestValue("GET", `/projects/${slug}/status`), output);
+  return emit(
+    await requestValue("GET", `/projects/${slug}/status`),
+    output,
+    (value) => renderStatus(value, getUi()),
+  );
 }
 
 async function logCommand(input: string[]) {
@@ -300,6 +326,7 @@ async function logCommand(input: string[]) {
   return emit(
     await requestValue("GET", `/projects/${slug}/log?${selector}`),
     output,
+    (value) => renderSnapshots(value, getUi()),
   );
 }
 
@@ -314,6 +341,7 @@ async function diffCommand(input: string[]) {
   return emit(
     await requestValue("GET", `/projects/${slug}/diff?${query}`),
     output,
+    (value) => renderDiff(value, getUi()),
   );
 }
 
@@ -322,36 +350,47 @@ async function branchCommand(input: string[]) {
   const output = outputOptions(input);
   if (subcommand === "list" || subcommand === "current") {
     const slug = await resolveProjectSlug(input);
-    return emit(
-      await requestValue(
-        "GET",
-        `/projects/${slug}/branches${subcommand === "current" ? "/current" : ""}`,
+    const value = await requestValue(
+      "GET",
+      `/projects/${slug}/branches${subcommand === "current" ? "/current" : ""}`,
+    );
+    if (subcommand === "current")
+      return emit(value, output, (entry) => renderBranch(entry, getUi()));
+    const current = (await requestValue(
+      "GET",
+      `/projects/${slug}/branches/current`,
+    )) as { name?: unknown };
+    return emit(value, output, (entry) =>
+      renderBranches(
+        entry,
+        getUi(),
+        typeof current.name === "string" ? current.name : undefined,
       ),
-      output,
     );
   }
   if (
     !["show", "create", "checkout", "rename", "delete"].includes(
       subcommand ?? "",
     )
-  ) {
+  )
     throw new DaemonClientError(
       "Usage: vcontext branch <list|current|show|create|checkout|rename|delete>",
       2,
     );
-  }
   const newName = takeOption(input, "--new-name");
   const from = takeOption(input, "--from");
   const target = await resolveRightTarget(input);
-  if (subcommand === "create") {
+  if (subcommand === "delete")
+    await confirmDestructive("Delete branch", getUi().options.yes);
+  if (subcommand === "create")
     return emit(
       await requestValue("POST", `/projects/${target.slug}/branches`, {
         name: target.value,
         from,
       }),
       output,
+      (value) => renderBranch(value, getUi(), "create"),
     );
-  }
   const route = `/projects/${target.slug}/branches/${encodeURIComponent(target.value)}`;
   const response =
     subcommand === "show"
@@ -363,7 +402,11 @@ async function branchCommand(input: string[]) {
               name: newName ?? requiredMissing("--new-name"),
             })
           : await requestValue("DELETE", route);
-  return emit(response, output);
+  return emit(response, output, (value) =>
+    subcommand === "delete"
+      ? renderDeleted(value, getUi(), "branch")
+      : renderBranch(value, getUi(), subcommand),
+  );
 }
 
 async function snapshotCommand(input: string[]) {
@@ -377,14 +420,14 @@ async function snapshotCommand(input: string[]) {
     return emit(
       await requestValue("GET", `/projects/${slug}/snapshots?${selector}`),
       output,
+      (value) => renderSnapshots(value, getUi()),
     );
   }
-  if (!["show", "diff", "checkout"].includes(subcommand ?? "")) {
+  if (!["show", "diff", "checkout"].includes(subcommand ?? ""))
     throw new DaemonClientError(
       "Usage: vcontext snapshot <list|show|diff|checkout>",
       2,
     );
-  }
   const from = takeOption(input, "--from");
   const branch = takeOption(input, "--branch");
   const target = await resolveRightTarget(input);
@@ -400,7 +443,13 @@ async function snapshotCommand(input: string[]) {
         : await requestValue("POST", `${route}/checkout`, {
             branch: branch ?? requiredMissing("--branch"),
           });
-  return emit(response, output);
+  return emit(response, output, (value) =>
+    subcommand === "diff"
+      ? renderDiff(value, getUi())
+      : subcommand === "checkout"
+        ? renderBranch(value, getUi(), "checkout")
+        : renderSnapshot(value, getUi()),
+  );
 }
 
 async function mergeCommand(input: string[]) {
@@ -414,6 +463,8 @@ async function mergeCommand(input: string[]) {
   const message = takeOption(input, "--message");
   const resolutionsText = takeOption(input, "--resolutions");
   const source = await resolveRightTarget(input);
+  if (subcommand === "apply")
+    await confirmDestructive("Apply merge", getUi().options.yes);
   let resolutions: unknown;
   if (resolutionsText) {
     try {
@@ -431,6 +482,7 @@ async function mergeCommand(input: string[]) {
       resolutions,
     }),
     output,
+    (value) => renderSnapshots(value, getUi()),
   );
 }
 
@@ -453,9 +505,14 @@ async function resolveRightTarget(input: string[]) {
 async function resolveCurrentProjectSlug() {
   const marker = findProjectMarker();
   if (marker) {
-    const resolved = await requestValue("POST", "/projects/resolve", { cwd: marker.root }) as { slug?: unknown };
+    const resolved = (await requestValue("POST", "/projects/resolve", {
+      cwd: marker.root,
+    })) as { slug?: unknown };
     if (typeof resolved.slug === "string") return resolved.slug;
-    throw new DaemonClientError("Daemon returned an invalid project resolution", 1);
+    throw new DaemonClientError(
+      "Daemon returned an invalid project resolution",
+      1,
+    );
   }
   const project = await resolveProjectByCurrentPath();
   if (project) return project.slug;
@@ -505,8 +562,8 @@ function rejectWriteOnlyOptions(query: URLSearchParams) {
 }
 
 function outputOptions(input: string[]) {
-  const json = takeFlag(input, "--json");
-  const quiet = takeFlag(input, "--quiet");
+  const json = takeFlag(input, "--json") || getUi().options.json;
+  const quiet = takeFlag(input, "--quiet") || getUi().options.quiet;
   if (json && quiet) {
     throw new DaemonClientError("--json and --quiet are incompatible", 2);
   }
@@ -517,53 +574,21 @@ async function requestValue(method: string, route: string, body?: unknown) {
   return parseJson(await request(method, route, body));
 }
 
-function emit(value: unknown, output: { json: boolean; quiet: boolean }) {
+function emit(
+  value: unknown,
+  output: { json: boolean; quiet: boolean },
+  human: (value: unknown) => void = () => {},
+) {
   if (output.quiet) return;
   if (output.json) {
-    console.log(JSON.stringify(value, null, 2));
+    getUi().json(value);
     return;
   }
-  printHuman(value);
-}
-
-function printHuman(value: unknown) {
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      console.log("(none)");
-      return;
-    }
-    for (const entry of value) console.log(formatHumanValue(entry));
-    return;
-  }
-  if (value && typeof value === "object") {
-    for (const [key, item] of Object.entries(value)) {
-      if (Array.isArray(item) || (item && typeof item === "object")) {
-        console.log(`${key}: ${JSON.stringify(item)}`);
-      } else {
-        console.log(`${key}: ${formatTimestamp(key, item)}`);
-      }
-    }
-    return;
-  }
-  console.log(String(value));
-}
-
-function formatHumanValue(value: unknown) {
-  if (!value || typeof value !== "object") return String(value);
-  return Object.entries(value)
-    .map(([key, item]) => `${key}=${formatTimestamp(key, item)}`)
-    .join("  ");
-}
-
-function formatTimestamp(key: string, value: unknown) {
-  return key.endsWith("_at") && typeof value === "number"
-    ? new Date(value).toISOString()
-    : String(value ?? "");
+  human(value);
 }
 
 async function daemon(input: string[]) {
   const subcommand = input.shift();
-
   switch (subcommand) {
     case "start":
       return daemonStart();
@@ -584,14 +609,14 @@ async function daemonStatus() {
   const pid = readPid();
 
   if (!pid) {
-    console.log("vcontext daemon is not running");
+    getUi().line("vcontext daemon is not running");
     return;
   }
 
   if (!isProcessRunning(pid)) {
     removeStalePid();
-    console.log("vcontext daemon is not running");
-    console.log("Removed stale PID file");
+    getUi().line("vcontext daemon is not running");
+    getUi().line("Removed stale PID file");
     return;
   }
 
@@ -599,10 +624,10 @@ async function daemonStatus() {
     const response = await rawRequest("GET", "/daemon/status");
     const status = parseJson<{ pid: number }>(response);
 
-    console.log(`vcontext daemon is running with PID ${status.pid}`);
+    getUi().line(`vcontext daemon is running with PID ${status.pid}`);
   } catch {
-    console.log(`vcontext daemon process exists with PID ${pid}`);
-    console.log("The local API did not respond");
+    getUi().line(`vcontext daemon process exists with PID ${pid}`);
+    getUi().line("The local API did not respond");
   }
 }
 
@@ -611,17 +636,17 @@ async function daemonStop() {
 
   if (!pid || !isProcessRunning(pid)) {
     removeStalePid();
-    console.log("vcontext daemon is not running");
+    getUi().line("vcontext daemon is not running");
     return;
   }
 
   try {
     await rawRequest("POST", "/daemon/stop");
-    console.log(`vcontext daemon stopping with PID ${pid}`);
+    getUi().line(`vcontext daemon stopping with PID ${pid}`);
     return;
   } catch {
     process.kill(pid, "SIGTERM");
-    console.log(`Sent SIGTERM to vcontext daemon PID ${pid}`);
+    getUi().line(`Sent SIGTERM to vcontext daemon PID ${pid}`);
   }
 }
 
@@ -640,9 +665,21 @@ async function init(input: string[]) {
   }
 
   if (remoteProject) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remoteProject)) throw new DaemonClientError("--remote must be <namespace>/<slug>", 2);
-    const linked = await requestValue("POST", "/sync/link", { project: remoteProject, remote_url: new URL(`/${remoteProject}`, cloudHost).toString(), path: localPath }) as { marker?: unknown };
-    writeProjectMarker(localPath, linked.marker as Parameters<typeof writeProjectMarker>[1]);
+    if (
+      !/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(
+        remoteProject,
+      )
+    )
+      throw new DaemonClientError("--remote must be <namespace>/<slug>", 2);
+    const linked = (await requestValue("POST", "/sync/link", {
+      project: remoteProject,
+      remote_url: new URL(`/${remoteProject}`, cloudHost).toString(),
+      path: localPath,
+    })) as { marker?: unknown };
+    writeProjectMarker(
+      localPath,
+      linked.marker as Parameters<typeof writeProjectMarker>[1],
+    );
     emit(linked, output);
     return;
   }
@@ -677,10 +714,27 @@ async function gitCommand(input: string[]) {
   const action = input.shift();
   if (action === "hooks") {
     const operation = input.shift();
-    if (input.length || !operation || !["install", "status", "repair", "uninstall"].includes(operation)) throw new DaemonClientError("Usage: vcontext git hooks <install|status|repair|uninstall>", 2);
+    if (
+      input.length ||
+      !operation ||
+      !["install", "status", "repair", "uninstall"].includes(operation)
+    )
+      throw new DaemonClientError(
+        "Usage: vcontext git hooks <install|status|repair|uninstall>",
+        2,
+      );
+    if (operation === "uninstall")
+      await confirmDestructive("Uninstall Git hooks", getUi().options.yes);
     const manager = new GitHooksManager(process.cwd());
-    const result = operation === "install" ? manager.install() : operation === "status" ? manager.status() : operation === "repair" ? manager.repair() : manager.uninstall();
-    console.log(JSON.stringify(result, null, 2));
+    const result =
+      operation === "install"
+        ? manager.install()
+        : operation === "status"
+          ? manager.status()
+          : operation === "repair"
+            ? manager.repair()
+            : manager.uninstall();
+    getUi().line(JSON.stringify(result, null, 2));
     return;
   }
   if (action === "hook-event") {
@@ -689,23 +743,43 @@ async function gitCommand(input: string[]) {
     try {
       const slug = await resolveProjectSlug([]);
       const stdin = event === "pre-push" ? await readStdin() : undefined;
-      await requestValue("POST", `/projects/${encodeURIComponent(slug)}/git/events`, { event, args: input, cwd: process.cwd(), stdin });
-    } catch { /* VContext hooks never block Git. */ }
+      await requestValue(
+        "POST",
+        `/projects/${encodeURIComponent(slug)}/git/events`,
+        { event, args: input, cwd: process.cwd(), stdin },
+      );
+    } catch {
+      /* VContext hooks never block Git. */
+    }
     return;
   }
-  throw new DaemonClientError("Usage: vcontext git hooks <install|status|repair|uninstall>", 2);
+  throw new DaemonClientError(
+    "Usage: vcontext git hooks <install|status|repair|uninstall>",
+    2,
+  );
 }
 
 function readStdin(): Promise<string> {
-  return new Promise((resolve) => { const chunks: Buffer[] = []; process.stdin.on("data", (chunk) => chunks.push(Buffer.from(chunk))); process.stdin.on("end", () => resolve(Buffer.concat(chunks).toString("utf8"))); process.stdin.resume(); });
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    process.stdin.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+    process.stdin.on("end", () =>
+      resolve(Buffer.concat(chunks).toString("utf8")),
+    );
+    process.stdin.resume();
+  });
 }
 
 async function syncQueueCommand(input: string[]) {
   const action = input.shift();
-  if (!action || !["status", "retry"].includes(action) || input.length) throw new DaemonClientError("Usage: vcontext sync <status|retry>", 2);
+  if (!action || !["status", "retry"].includes(action) || input.length)
+    throw new DaemonClientError("Usage: vcontext sync <status|retry>", 2);
   const slug = await resolveProjectSlug([]);
-  const value = await requestValue(action === "status" ? "GET" : "POST", `/projects/${encodeURIComponent(slug)}/sync/queue${action === "retry" ? "/retry" : ""}`);
-  console.log(JSON.stringify(value, null, 2));
+  const value = await requestValue(
+    action === "status" ? "GET" : "POST",
+    `/projects/${encodeURIComponent(slug)}/sync/queue${action === "retry" ? "/retry" : ""}`,
+  );
+  getUi().line(JSON.stringify(value, null, 2));
 }
 
 async function projectsCommand(input: string[]) {
@@ -713,7 +787,9 @@ async function projectsCommand(input: string[]) {
   if (input.length > 0) {
     throw new DaemonClientError("Usage: vcontext projects [--json|--quiet]", 2);
   }
-  emit(await requestValue("GET", "/projects"), output);
+  emit(await requestValue("GET", "/projects"), output, (value) =>
+    renderProjects(value, getUi()),
+  );
 }
 
 async function giveContext(input: string[]) {
@@ -730,7 +806,7 @@ async function giveContext(input: string[]) {
 
   if (output.quiet) return;
   if (output.json) return emit(parseJson(response), output);
-  console.log(response.body);
+  getUi().line(response.body);
 }
 
 async function migration(input: string[]) {
@@ -743,6 +819,8 @@ async function migration(input: string[]) {
   const output = outputOptions(input);
   const target = takeOption(input, "--to");
   const slug = await resolveProjectSlug(input);
+  if (subcommand === "run")
+    await confirmDestructive("Run project migrations", getUi().options.yes);
   const response =
     subcommand === "run"
       ? await request(
@@ -751,55 +829,9 @@ async function migration(input: string[]) {
           target ? { to: target } : {},
         )
       : await request("GET", `/projects/${slug}/migrations/${subcommand}`);
-  if (output.quiet) return;
-  if (output.json) return emit(parseJson(response), output);
-  printMigrationResult(
-    subcommand!,
-    parseJson<Record<string, unknown>>(response),
+  return emit(parseJson<Record<string, unknown>>(response), output, (value) =>
+    renderMigration(value, getUi(), subcommand!),
   );
-}
-
-function printMigrationResult(
-  command: string,
-  result: Record<string, unknown>,
-) {
-  const status =
-    command === "run" && result.status && typeof result.status === "object"
-      ? (result.status as Record<string, unknown>)
-      : result;
-  console.log(`Project: ${String(status.project_slug ?? "")}`);
-  if ("current_version" in status) {
-    console.log(`Current schema: ${String(status.current_version)}`);
-    console.log(`Latest schema: ${String(status.latest_version)}`);
-  }
-  const applied = Array.isArray(status.applied) ? status.applied : [];
-  const pending = Array.isArray(status.pending) ? status.pending : [];
-  if (command === "pending") {
-    const entries = Array.isArray(result.pending) ? result.pending : [];
-    console.log(`Pending migrations: ${entries.length}`);
-    for (const entry of entries as Array<Record<string, unknown>>) {
-      console.log(`- ${String(entry.version)} ${String(entry.name)}`);
-    }
-    return;
-  }
-  if (command === "list") {
-    const entries = Array.isArray(result.migrations) ? result.migrations : [];
-    for (const entry of entries as Array<Record<string, unknown>>) {
-      console.log(
-        `- [${String(entry.state)}] ${String(entry.version)} ${String(entry.name)}`,
-      );
-    }
-    return;
-  }
-  console.log(`Applied migrations: ${applied.length}`);
-  console.log(`Pending migrations: ${pending.length}`);
-  console.log(`Checksum state: ${String(status.checksum_state ?? "valid")}`);
-  const incomplete = Array.isArray(status.incomplete_post_migrations)
-    ? status.incomplete_post_migrations
-    : [];
-  console.log(`Incomplete post-migrations: ${incomplete.length}`);
-  const backups = Array.isArray(status.backup_paths) ? status.backup_paths : [];
-  for (const backup of backups) console.log(`Backup: ${String(backup)}`);
 }
 
 async function resolveProjectSlug(input: string[]) {
@@ -817,7 +849,9 @@ async function resolveProjectSlug(input: string[]) {
   const marker = findProjectMarker();
 
   if (marker) {
-    const resolved = await requestValue("POST", "/projects/resolve", { cwd: marker.root }) as { slug?: unknown };
+    const resolved = (await requestValue("POST", "/projects/resolve", {
+      cwd: marker.root,
+    })) as { slug?: unknown };
     if (typeof resolved.slug === "string") return resolved.slug;
   }
 
@@ -874,6 +908,21 @@ async function resolveProjectByCurrentPath() {
 
     current = parent;
   }
+}
+
+async function confirmDestructive(
+  action: string,
+  accepted: boolean,
+): Promise<void> {
+  if (accepted) return;
+  if (!getUi().isTTY || getUi().options.json || getUi().options.quiet) {
+    throw new DaemonClientError(
+      `${action} requires confirmation. Re-run with --yes.`,
+      10,
+    );
+  }
+  if (!(await getUi().confirm(`${action}?`)))
+    throw new DaemonClientError("Operation cancelled.", 130);
 }
 
 function parseJson<T = unknown>(response: CliResponse) {
@@ -974,18 +1023,23 @@ async function mcpServe() {
 
   const port = readPort();
   if (!port) {
-    console.error("vcontext: daemon port not found");
+    getUi().errorLine("vcontext: daemon port not found");
     process.exit(1);
   }
 
-  console.log(`MCP endpoint: http://127.0.0.1:${port}/mcp`);
-  console.log("Stop with: vcontext daemon stop");
+  getUi().line(`MCP endpoint: http://127.0.0.1:${port}/mcp`);
+  getUi().line("Stop with: vcontext daemon stop");
 
   await new Promise(() => {});
 }
 
-function usage() {
-  console.log(`vcontext
+function version() {
+  getUi().line(VCONTEXT_VERSION);
+}
+
+function usage(command?: string) {
+  if (command) getUi().line(`${getUi().brand(`vcontext ${command}`)} help`);
+  getUi().line(`vcontext
 
 Usage:
   vcontext auth <login|logout|status> [--host url]
@@ -1015,11 +1069,12 @@ Usage:
   vcontext give-context [project-slug] [--json]
   vcontext mcp [serve]
 
-Flow:
-  init → create/update → branch → log/diff → merge
-
-Common selectors:
-  reads:  --branch name | --snapshot snapshot-id
-  writes: --branch name [--message text]
-  output: --json | --quiet`);
+Global options:
+  --help       Show help
+  --version    Show version
+  --verbose    Show diagnostic details
+  --quiet      Suppress successful output
+  --no-color   Disable colors
+  --yes        Accept confirmations
+  --json       Emit parseable JSON`);
 }

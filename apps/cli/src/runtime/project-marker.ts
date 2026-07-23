@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ProjectMarkerSchema, type ProjectMarker } from "@vcontext/versioning-contract";
+import {
+  ProjectMarkerSchema,
+  type ProjectMarker,
+} from "@vcontext/versioning-contract";
 
 export const PROJECT_MARKER_DIR = ".vcontext";
 export const PROJECT_MARKER_FILE = "project.json";
@@ -20,10 +23,16 @@ export function findProjectMarker(start = process.cwd()) {
   let current = path.resolve(start);
 
   while (true) {
-    const markerPath = path.join(current, PROJECT_MARKER_DIR, PROJECT_MARKER_FILE);
+    const markerPath = path.join(
+      current,
+      PROJECT_MARKER_DIR,
+      PROJECT_MARKER_FILE,
+    );
 
     if (fs.existsSync(markerPath)) {
-      const marker = ProjectMarkerSchema.parse(JSON.parse(fs.readFileSync(markerPath, "utf-8")));
+      const marker = ProjectMarkerSchema.parse(
+        JSON.parse(fs.readFileSync(markerPath, "utf-8")),
+      );
 
       return {
         root: current,

@@ -1,4 +1,5 @@
 import { DaemonClientError } from "@repo/daemon-client";
+import { getUi } from "../ui/index.js";
 import {
   assertNoArgs,
   emit,
@@ -49,7 +50,7 @@ export async function remoteCommand(
       `/projects/${encodeURIComponent(slug)}/remotes`,
       { name, url },
     );
-    emit(value, output, () => console.log(`Added remote ${name}: ${url}`));
+    emit(value, output, () => getUi().line(`Added remote ${name}: ${url}`));
     return;
   }
 
@@ -66,15 +67,26 @@ export async function remoteCommand(
     const path = await remotePath();
     assertNoArgs(input, usage);
     const value = await dependencies.requestValue("PATCH", path, { url });
-    emit(value, output, () => console.log(`Updated remote ${name}: ${url}`));
+    emit(value, output, () => getUi().line(`Updated remote ${name}: ${url}`));
     return;
   }
 
   if (subcommand === "remove") {
+    if (!getUi().options.yes && !getUi().isTTY)
+      throw new DaemonClientError(
+        "Removing a remote requires confirmation. Re-run with --yes.",
+        10,
+      );
+
+    if (
+      !getUi().options.yes &&
+      !(await getUi().confirm(`Remove remote ${name}?`))
+    )
+      throw new DaemonClientError("Operation cancelled.", 130);
     const path = await remotePath();
     assertNoArgs(input, usage);
     const value = await dependencies.requestValue("DELETE", path);
-    emit(value, output, () => console.log(`Removed remote ${name}`));
+    emit(value, output, () => getUi().line(`Removed remote ${name}`));
     return;
   }
 
@@ -96,13 +108,13 @@ function takeProjectSelector(input: string[]): string[] {
 function printRemoteList(value: unknown): void {
   if (!Array.isArray(value)) return;
   for (const item of value) {
-    if (isRemote(item)) console.log(`${item.name}\t${item.url}`);
+    if (isRemote(item)) getUi().line(`${item.name}\t${item.url}`);
   }
 }
 
 function printRemoteUrl(value: unknown): void {
-  if (typeof value === "string") console.log(value);
-  else if (isRemote(value)) console.log(value.url);
+  if (typeof value === "string") getUi().line(value);
+  else if (isRemote(value)) getUi().line(value.url);
 }
 
 function isRemote(value: unknown): value is { name: string; url: string } {

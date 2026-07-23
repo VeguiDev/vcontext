@@ -199,8 +199,7 @@ describe("remote and sync commands", () => {
       method: "POST",
       requestPath: "/sync/clone",
       body: {
-        remote_url:
-          "http://localhost:4000/api/v1/repos/veguidev/vcontext",
+        remote_url: "http://localhost:4000/api/v1/repos/veguidev/vcontext",
         path: path.join(cwd, "vcontext"),
         yes: false,
       },

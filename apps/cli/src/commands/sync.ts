@@ -2,6 +2,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import path from "node:path";
 import { DaemonClientError } from "@repo/daemon-client";
+import { getUi } from "../ui/index.js";
 import {
   assertNoArgs,
   emit,
@@ -26,14 +27,18 @@ export async function cloneCommand(
   const output = outputOptions(input);
   const yes = takeFlag(input, "--yes");
   const path = takeOption(input, "--path");
-  const host = takeOption(input, "--host") ?? process.env.VCONTEXT_CLOUD_URL ?? "https://cloud.vcontext.dev";
+  const host =
+    takeOption(input, "--host") ??
+    process.env.VCONTEXT_CLOUD_URL ??
+    "https://cloud.vcontext.dev";
   const remoteInput = takePositional(
     input,
     "Usage: vcontext clone <url> [path|--path path] [--yes] [--json|--quiet]",
   );
-  const remoteUrl = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remoteInput)
-    ? new URL(`/${remoteInput}`, host).toString()
-    : remoteInput;
+  const remoteUrl =
+    /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remoteInput)
+      ? new URL(`/${remoteInput}`, host).toString()
+      : remoteInput;
   const destination = path ?? takeOptionalPositional(input);
   assertNoArgs(
     input,
@@ -79,7 +84,10 @@ function resolveCloneDestination(
   try {
     name = encodedName ? decodeURIComponent(encodedName) : "";
   } catch {
-    throw new DaemonClientError("Clone URL contains an invalid project name", 2);
+    throw new DaemonClientError(
+      "Clone URL contains an invalid project name",
+      2,
+    );
   }
   if (
     !name ||
@@ -164,7 +172,9 @@ async function requestWithMove(
   output: OutputOptions,
   yes: boolean,
 ): Promise<unknown> {
-  let result = await dependencies.requestValue(method, path, body);
+  let result = await getUi().run(`${method} ${path}`, () =>
+    dependencies.requestValue(method, path, body),
+  );
   if (!isRemoteMoved(result)) return result;
 
   const tty = dependencies.isTTY ?? Boolean(stdin.isTTY && stdout.isTTY);
@@ -189,10 +199,12 @@ async function requestWithMove(
       10,
     );
   }
-  result = await dependencies.requestValue(method, path, {
-    ...body,
-    yes: true,
-  });
+  result = await getUi().run(`${method} ${path}`, () =>
+    dependencies.requestValue(method, path, {
+      ...body,
+      yes: true,
+    }),
+  );
   if (isRemoteMoved(result)) {
     throw new DaemonClientError("Remote move could not be accepted", 10);
   }
@@ -240,8 +252,8 @@ function takeOptionalPositional(input: string[]): string | undefined {
 
 function printSyncResult(label: string, value: unknown): void {
   if (typeof value === "object" && value !== null && "message" in value) {
-    console.log(String(value.message));
+    getUi().line(String(value.message));
     return;
   }
-  console.log(label);
+  getUi().line(label);
 }

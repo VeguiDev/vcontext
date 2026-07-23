@@ -1,5 +1,6 @@
 import { rawRequest } from "@repo/daemon-client";
 import { readPort, readToken } from "@repo/vcontext-core";
+import { getUi } from "./ui/index.js";
 
 export async function acquireLease(): Promise<string> {
   const port = readPort();
@@ -41,7 +42,7 @@ export function startHeartbeat(
         });
       }
     } catch {
-      console.error("vcontext: heartbeat failed");
+      getUi().errorLine("vcontext: heartbeat failed");
     }
   }, intervalMs);
 }

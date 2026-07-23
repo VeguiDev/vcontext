@@ -1,5 +1,6 @@
 {
   "name": "@app/cli",
+  "version": "0.1.0",
   "type": "module",
   "bin": {
     "vcontext": "./dist/src/index.js"
@@ -8,15 +9,19 @@
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "test": "pnpm build && node --test \"dist/test/*.test.js\"",
-    "start": "node dist/src/index.js"
+    "start": "node dist/src/index.js",
+    "lint": "prettier --check src/**/*.ts test/**/*.ts",
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@napi-rs/keyring": "1.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@napi-rs/keyring": "1.3.0",
     "@repo/daemon-client": "workspace:^",
     "@repo/vcontext-core": "workspace:^",
     "@repo/vcontext-mcp": "workspace:^",
-    "@vcontext/versioning-contract": "workspace:0.1.0"
+    "@vcontext/versioning-contract": "workspace:0.1.0",
+    "ora": "^9.4.1",
+    "picocolors": "^1.1.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",
