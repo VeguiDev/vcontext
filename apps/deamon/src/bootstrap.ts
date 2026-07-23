@@ -14,6 +14,7 @@ import {
 } from "@repo/vcontext-core";
 import { SyncService } from "./sync/sync-service.js";
 import { ProjectResolverService } from "./project/project-resolver-service.js";
+import type { RegisteredProject } from "./storage/registry-store.js";
 
 export class AppBoostrap {
   private registry = new RegistryStore();
@@ -49,7 +50,9 @@ export class AppBoostrap {
       Number(process.env.VCONTEXT_IDLE_TIMEOUT_MS) || 30 * 60 * 1000;
     let server: ReturnType<typeof createServer>;
     const sync = new SyncService(this.projects);
-    const resolver = new ProjectResolverService(this.projects, { initialize: (input) => sync.initializeExisting(input) });
+    const resolver = new ProjectResolverService(this.projects, {
+      initialize: (input) => sync.initializeExisting(input),
+    });
     const services = {
       registry: this.registry,
       projectService: this.projects,
@@ -68,7 +71,13 @@ export class AppBoostrap {
       activity,
       sync,
     };
-    for (const project of this.registry.all()) void services.sync.drainQueue(project.slug);
+    const drainQueues = () =>
+      drainRegisteredSyncQueues(
+        this.registry.all(),
+        migrationFailures,
+        services.sync,
+      );
+    void drainQueues();
     const app = createApp(services);
 
     const idleTimer = setInterval(() => {
@@ -82,7 +91,7 @@ export class AppBoostrap {
       }
     }, 30_000);
     const queueTimer = setInterval(() => {
-      for (const project of this.registry.all()) void services.sync.drainQueue(project.slug);
+      void drainQueues();
     }, 30_000);
 
     server = createServer(async (req, res) => {
@@ -113,6 +122,7 @@ export class AppBoostrap {
 
     const cleanup = () => {
       clearInterval(idleTimer);
+      clearInterval(queueTimer);
       removePort();
       removePid();
     };
@@ -127,6 +137,27 @@ export class AppBoostrap {
       process.exit(0);
     });
   }
+}
+
+export async function drainRegisteredSyncQueues(
+  projects: ReadonlyArray<Pick<RegisteredProject, "slug">>,
+  migrationFailures: ReadonlyMap<string, Error>,
+  sync: Pick<SyncService, "drainQueue">,
+  log: Pick<Console, "error"> = console,
+): Promise<void> {
+  await Promise.all(
+    projects
+      .filter((project) => !migrationFailures.has(project.slug))
+      .map(async (project) => {
+        try {
+          await sync.drainQueue(project.slug);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          log.error(`Project ${project.slug} sync queue failed: ${message}`);
+        }
+      }),
+  );
 }
 
 export async function migrateRegisteredProjects(

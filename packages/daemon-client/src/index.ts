@@ -10,7 +10,10 @@ import {
   PROJECT_MARKER_FILE,
   findProjectMarker,
   resolveProjectSlug,
+  clearDaemonStartError,
+  DAEMON_START_ERROR_FILE,
   PORT_FILE,
+  readDaemonStartError,
   readPort,
   runningPid,
 } from "@repo/vcontext-core";
@@ -234,6 +237,7 @@ export async function ensureDaemon(): Promise<void> {
     }
   }
 
+  clearDaemonStartError();
   const child = spawn(process.execPath, daemonCommand(), {
     detached: true,
     stdio: "ignore",
@@ -253,9 +257,7 @@ export async function ensureDaemon(): Promise<void> {
     ]);
 
     if (exitCode !== null && exitCode !== 0) {
-      throw new DaemonClientError(
-        `Daemon exited immediately with code ${exitCode}.`,
-      );
+      throw daemonStartFailure(exitCode);
     }
 
     try {
@@ -271,6 +273,23 @@ export async function ensureDaemon(): Promise<void> {
   throw new DaemonClientError(
     "Daemon did not start within 10 seconds. Run `vcontext daemon status` to check.",
   );
+}
+
+function daemonStartFailure(exitCode: number): DaemonClientError {
+  const startup = readDaemonStartError();
+  const error = new DaemonClientError(
+    startup?.message ?? `Daemon exited immediately with code ${exitCode}.`,
+    1,
+    undefined,
+    {
+      code: "DAEMON_START_FAILED",
+      details: {
+        note: `Startup diagnostics: ${DAEMON_START_ERROR_FILE}`,
+      },
+    },
+  );
+  if (startup?.stack) error.stack = startup.stack;
+  return error;
 }
 
 function responseError(response: CliResponse): {

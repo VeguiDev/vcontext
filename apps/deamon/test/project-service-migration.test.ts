@@ -107,6 +107,29 @@ describe("ProjectService migration gate", { concurrency: false }, () => {
     assert.ok(messages.some((message) => message.includes(healthy.slug)));
     assert.ok(messages.some((message) => message.includes(failed.slug)));
   });
+
+  it("skips failed migrations and contains background sync errors", async () => {
+    const { drainRegisteredSyncQueues } = await import("../src/bootstrap.js");
+    const attempted: string[] = [];
+    const messages: string[] = [];
+
+    await drainRegisteredSyncQueues(
+      [{ slug: "healthy" }, { slug: "migration-failed" }],
+      new Map([["migration-failed", new Error("checksum mismatch")]]),
+      {
+        drainQueue: async (slug: string) => {
+          attempted.push(slug);
+          throw new Error("remote unavailable");
+        },
+      },
+      { error: (message) => messages.push(message) },
+    );
+
+    assert.deepEqual(attempted, ["healthy"]);
+    assert.deepEqual(messages, [
+      "Project healthy sync queue failed: remote unavailable",
+    ]);
+  });
 });
 
 function loadedMigration(

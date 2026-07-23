@@ -22,6 +22,7 @@ export interface ProjectMigration {
 
 export interface LoadedProjectMigration extends ProjectMigration {
   checksum: string;
+  compatibleChecksums?: readonly string[];
   sourcePath: string;
 }
 

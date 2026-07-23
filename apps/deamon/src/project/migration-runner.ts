@@ -72,7 +72,7 @@ export class ProjectMigrationRunner {
       const migration = available.get(row.version);
       const checksumState = !migration
         ? "unknown"
-        : migration.checksum === row.checksum
+        : checksumMatches(migration, row.checksum)
           ? "valid"
           : "mismatch";
       return {
@@ -241,9 +241,9 @@ export class ProjectMigrationRunner {
           `Scoped database contains unknown applied migration ${row.version}`,
         );
       }
-      if (migration.checksum !== row.checksum) {
+      if (!checksumMatches(migration, row.checksum)) {
         throw new ProjectMigrationError(
-          `Checksum mismatch for applied migration ${row.version} (${row.name}); expected ${row.checksum}, found ${migration.checksum}`,
+          `Checksum mismatch for applied migration ${row.version} (${row.name}); expected ${migration.checksum}, found ${row.checksum}`,
           migration,
         );
       }
@@ -409,6 +409,16 @@ export class ProjectMigrationRunner {
     }
     return migration;
   }
+}
+
+function checksumMatches(
+  migration: LoadedProjectMigration,
+  appliedChecksum: string,
+): boolean {
+  return (
+    migration.checksum === appliedChecksum ||
+    migration.compatibleChecksums?.includes(appliedChecksum) === true
+  );
 }
 
 function currentVersion(applied: Array<{ version: string }>) {

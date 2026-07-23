@@ -20,8 +20,8 @@ afterEach(async () => {
 describe("project migration discovery", () => {
   it("loads migration files, ignores other files, calculates checksums, and sorts semver", async () => {
     const directory = await temporaryDirectory();
-    await writeMigration(directory, "1.10.0-later.ts", "1.10.0", "Later");
-    await writeMigration(directory, "1.2.0-earlier.ts", "1.2.0", "Earlier");
+    await writeMigration(directory, "1.10.0-later.mjs", "1.10.0", "Later");
+    await writeMigration(directory, "1.2.0-earlier.mjs", "1.2.0", "Earlier");
     await fs.writeFile(path.join(directory, "README.md"), "ignored");
     await fs.writeFile(
       path.join(directory, "helper.ts"),
@@ -47,9 +47,26 @@ describe("project migration discovery", () => {
     assert.ok(compareSemver("2.0.0", "2.0.0-rc.1") > 0);
   });
 
+  it("normalizes line endings before calculating checksums", async () => {
+    const lfDirectory = await temporaryDirectory();
+    const crlfDirectory = await temporaryDirectory();
+    const source =
+      'export default { version: "1.0.0", name: "Stable", migrate() {} };\n';
+    await fs.writeFile(path.join(lfDirectory, "1.0.0-stable.mjs"), source);
+    await fs.writeFile(
+      path.join(crlfDirectory, "1.0.0-stable.mjs"),
+      source.replaceAll("\n", "\r\n"),
+    );
+
+    const [lf] = await loadProjectMigrations(lfDirectory);
+    const [crlf] = await loadProjectMigrations(crlfDirectory);
+
+    assert.equal(lf?.checksum, crlf?.checksum);
+  });
+
   it("rejects invalid exported versions", async () => {
     const directory = await temporaryDirectory();
-    await writeMigration(directory, "1.0.0-invalid.ts", "01.0.0", "Invalid");
+    await writeMigration(directory, "1.0.0-invalid.mjs", "01.0.0", "Invalid");
     await assert.rejects(
       loadProjectMigrations(directory),
       /invalid semantic version/,
@@ -58,8 +75,8 @@ describe("project migration discovery", () => {
 
   it("rejects duplicate versions", async () => {
     const directory = await temporaryDirectory();
-    await writeMigration(directory, "1.0.0-one.ts", "1.0.0", "One");
-    await writeMigration(directory, "1.0.0-two.ts", "1.0.0", "Two");
+    await writeMigration(directory, "1.0.0-one.mjs", "1.0.0", "One");
+    await writeMigration(directory, "1.0.0-two.mjs", "1.0.0", "Two");
     await assert.rejects(
       loadProjectMigrations(directory),
       /Duplicate.*1\.0\.0/,
@@ -69,7 +86,7 @@ describe("project migration discovery", () => {
   it("validates names and lifecycle methods", async () => {
     const directory = await temporaryDirectory();
     await fs.writeFile(
-      path.join(directory, "1.0.0-bad.ts"),
+      path.join(directory, "1.0.0-bad.mjs"),
       "export default { version: '1.0.0', name: '', migrate: true };",
     );
     await assert.rejects(loadProjectMigrations(directory), /non-empty name/);

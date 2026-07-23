@@ -1,5 +1,3 @@
-import { AppBoostrap } from "./bootstrap.js";
+import { startDaemon } from "./entrypoint.js";
 
-const app = new AppBoostrap();
-
-app.bootstrap();
+await startDaemon();

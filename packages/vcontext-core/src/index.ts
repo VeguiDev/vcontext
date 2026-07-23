@@ -10,7 +10,77 @@ export const VCONTEXT_HOME =
 export const PID_FILE = path.join(VCONTEXT_HOME, "vcontext.pid");
 export const PORT_FILE = path.join(VCONTEXT_HOME, "vcontext.port");
 export const TOKEN_FILE = path.join(VCONTEXT_HOME, "vcontext.token");
+export const DAEMON_START_ERROR_FILE = path.join(
+  VCONTEXT_HOME,
+  "daemon-start-error.json",
+);
 export const DEFAULT_PORT = 11434;
+
+export interface DaemonStartError {
+  name: string;
+  message: string;
+  stack?: string;
+  timestamp: string;
+}
+
+export function writeDaemonStartError(error: unknown): void {
+  try {
+    const value =
+      error instanceof Error
+        ? {
+            name: error.name,
+            message: error.message,
+            ...(error.stack ? { stack: error.stack } : {}),
+          }
+        : { name: "Error", message: String(error) };
+    fs.mkdirSync(VCONTEXT_HOME, { recursive: true });
+    fs.writeFileSync(
+      DAEMON_START_ERROR_FILE,
+      `${JSON.stringify(
+        {
+          ...value,
+          timestamp: new Date().toISOString(),
+        },
+        null,
+        2,
+      )}\n`,
+      { encoding: "utf8", mode: 0o600 },
+    );
+  } catch {
+    // Startup diagnostics must never replace the original daemon failure.
+  }
+}
+
+export function readDaemonStartError(): DaemonStartError | null {
+  try {
+    const value = JSON.parse(
+      fs.readFileSync(DAEMON_START_ERROR_FILE, "utf8"),
+    ) as Partial<DaemonStartError>;
+    if (
+      typeof value.name !== "string" ||
+      typeof value.message !== "string" ||
+      typeof value.timestamp !== "string" ||
+      (value.stack !== undefined && typeof value.stack !== "string")
+    ) {
+      return null;
+    }
+    return value as DaemonStartError;
+  } catch {
+    return null;
+  }
+}
+
+export function clearDaemonStartError(): void {
+  try {
+    fs.unlinkSync(DAEMON_START_ERROR_FILE);
+  } catch (error) {
+    if (
+      !(error instanceof Error && "code" in error && error.code === "ENOENT")
+    ) {
+      throw error;
+    }
+  }
+}
 
 export function readToken(): string | null {
   try {
@@ -65,7 +135,9 @@ export function removePid(pid = process.pid): void {
   try {
     fs.unlinkSync(PID_FILE);
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+    if (
+      !(error instanceof Error && "code" in error && error.code === "ENOENT")
+    ) {
       throw error;
     }
   }
@@ -100,7 +172,9 @@ export function removeStalePid(): void {
   try {
     fs.unlinkSync(PID_FILE);
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+    if (
+      !(error instanceof Error && "code" in error && error.code === "ENOENT")
+    ) {
       throw error;
     }
   }
@@ -126,7 +200,9 @@ export function removePort(): void {
   try {
     fs.unlinkSync(PORT_FILE);
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+    if (
+      !(error instanceof Error && "code" in error && error.code === "ENOENT")
+    ) {
       throw error;
     }
   }
@@ -183,12 +259,34 @@ export function findProjectMarker(
         slug = typeof markerValue.slug === "string" ? markerValue.slug : "";
         uuid = typeof markerValue.uuid === "string" ? markerValue.uuid : "";
       } else {
-        if (markerValue.version !== 1 || typeof markerValue.project !== "string" || typeof markerValue.project_id !== "string" || typeof markerValue.remote !== "string") throw invalidMarker(markerPath);
+        if (
+          markerValue.version !== 1 ||
+          typeof markerValue.project !== "string" ||
+          typeof markerValue.project_id !== "string" ||
+          typeof markerValue.remote !== "string"
+        )
+          throw invalidMarker(markerPath);
         const projectParts = markerValue.project.split("/");
-        if (projectParts.length !== 2 || projectParts.some((part) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(part))) throw invalidMarker(markerPath);
+        if (
+          projectParts.length !== 2 ||
+          projectParts.some(
+            (part) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(part),
+          )
+        )
+          throw invalidMarker(markerPath);
         let remote: URL;
-        try { remote = new URL(markerValue.remote); } catch { throw invalidMarker(markerPath); }
-        if (!/^https?:$/.test(remote.protocol) || !remote.pathname.endsWith(`/api/v1/projects/${markerValue.project_id}`)) throw invalidMarker(markerPath);
+        try {
+          remote = new URL(markerValue.remote);
+        } catch {
+          throw invalidMarker(markerPath);
+        }
+        if (
+          !/^https?:$/.test(remote.protocol) ||
+          !remote.pathname.endsWith(
+            `/api/v1/projects/${markerValue.project_id}`,
+          )
+        )
+          throw invalidMarker(markerPath);
         slug = projectParts[1]!;
         uuid = markerValue.project_id;
       }
@@ -198,7 +296,13 @@ export function findProjectMarker(
         root: current,
         path: markerPath,
         marker: canonical
-          ? { slug, uuid, version: 1, project: markerValue.project as string, remote: markerValue.remote as string }
+          ? {
+              slug,
+              uuid,
+              version: 1,
+              project: markerValue.project as string,
+              remote: markerValue.remote as string,
+            }
           : { slug, uuid },
         legacy,
         raw: markerValue,
@@ -216,11 +320,15 @@ export function findProjectMarker(
 }
 
 function invalidMarker(markerPath: string) {
-  return new Error(`Invalid project marker: ${markerPath}. Expected version 1 marker; legacy markers must contain only {slug, uuid}.`);
+  return new Error(
+    `Invalid project marker: ${markerPath}. Expected version 1 marker; legacy markers must contain only {slug, uuid}.`,
+  );
 }
 
 function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
 export function resolveProjectSlug(opts: {

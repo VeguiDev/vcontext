@@ -129,6 +129,34 @@ describe("ProjectMigrationRunner", () => {
     assert.throws(() => runner.pending(), /Checksum mismatch.*1\.0\.0/);
   });
 
+  it("accepts an explicitly compatible checksum without rewriting it", async () => {
+    const candidate = migration("1.0.0", "Legacy checksum", () => undefined);
+    const fixture = await createFixture([candidate]);
+    fixture.scopedDb
+      .prepare(
+        "INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
+      )
+      .run(candidate.version, candidate.name, "legacy-checksum", 1);
+    const runner = fixture.createRunner([
+      {
+        ...candidate,
+        compatibleChecksums: ["legacy-checksum"],
+      },
+    ]);
+
+    assert.equal(runner.status().checksum_state, "valid");
+    assert.deepEqual(runner.pending(), []);
+    assert.equal(
+      fixture.scopedDb
+        .prepare(
+          "SELECT checksum FROM schema_migrations WHERE version = '1.0.0'",
+        )
+        .pluck()
+        .get(),
+      "legacy-checksum",
+    );
+  });
+
   it("creates and retains a consistent backup for required migrations", async () => {
     const candidate = migration("1.0.0", "Destructive", ({ scopedDb }) => {
       scopedDb.exec("CREATE TABLE after_backup (id INTEGER)");

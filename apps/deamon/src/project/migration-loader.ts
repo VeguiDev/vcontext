@@ -28,7 +28,7 @@ export async function loadProjectMigrations(directory?: string) {
     }
     const sourcePath = path.join(resolvedDirectory, entry.name);
     const source = await fs.readFile(sourcePath);
-    const checksum = createHash("sha256").update(source).digest("hex");
+    const checksum = migrationChecksum(source);
     const url = pathToFileURL(sourcePath);
     url.searchParams.set("checksum", checksum);
     const module = (await import(url.href)) as { default?: unknown };
@@ -46,6 +46,13 @@ export async function loadProjectMigrations(directory?: string) {
     versions.add(migration.version);
   }
   return loaded.sort((a, b) => compareSemver(a.version, b.version));
+}
+
+export function migrationChecksum(source: Uint8Array | string): string {
+  const normalized = Buffer.from(source)
+    .toString("utf8")
+    .replace(/\r\n?/g, "\n");
+  return createHash("sha256").update(normalized, "utf8").digest("hex");
 }
 
 function validateMigration(
