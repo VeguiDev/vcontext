@@ -3,6 +3,25 @@ import { stdin, stdout, stderr } from "node:process";
 import pc from "picocolors";
 import ora, { type Ora } from "ora";
 
+export interface UiWriter {
+  isTTY?: boolean;
+  columns?: number;
+  write(chunk: string): unknown;
+}
+
+export interface UiReader {
+  isTTY?: boolean;
+}
+
+export interface CliUiEnvironment {
+  input?: UiReader;
+  output?: UiWriter;
+  error?: UiWriter;
+  isTTY?: boolean;
+  color?: boolean;
+  columns?: number;
+}
+
 export interface CliOptions {
   json: boolean;
   quiet: boolean;
@@ -32,8 +51,11 @@ const defaults: CliOptions = {
 
 let current: CliUi;
 
-export function configureUi(options: Partial<CliOptions> = {}): CliUi {
-  current = new CliUi({ ...defaults, ...options });
+export function configureUi(
+  options: Partial<CliOptions> = {},
+  environment: CliUiEnvironment = {},
+): CliUi {
+  current = new CliUi({ ...defaults, ...options }, environment);
   return current;
 }
 
@@ -66,19 +88,39 @@ export class CliUi {
   readonly options: CliOptions;
   readonly isTTY: boolean;
   readonly color: boolean;
+  readonly columns: number;
+  private readonly input: UiReader;
+  private readonly output: UiWriter;
+  private readonly errorOutput: UiWriter;
 
-  constructor(options: CliOptions) {
+  constructor(options: CliOptions, environment: CliUiEnvironment = {}) {
     this.options = options;
-    this.isTTY = Boolean(stdin.isTTY && stdout.isTTY) && !options.json;
-    this.color = !options.noColor && Boolean(stdout.isTTY) && !options.json;
+    this.input = environment.input ?? stdin;
+    this.output = environment.output ?? stdout;
+    this.errorOutput = environment.error ?? stderr;
+    this.isTTY =
+      (environment.isTTY ?? Boolean(this.input.isTTY && this.output.isTTY)) &&
+      !options.json;
+    this.color =
+      !options.noColor &&
+      !options.json &&
+      (environment.color ?? Boolean(this.output.isTTY));
+    this.columns = Math.max(
+      40,
+      environment.columns ?? this.output.columns ?? 80,
+    );
+  }
+
+  get rich(): boolean {
+    return this.isTTY && !this.options.json;
   }
 
   line(message = ""): void {
-    stdout.write(`${message}\n`);
+    this.output.write(`${message}\n`);
   }
 
   errorLine(message = ""): void {
-    stderr.write(`${message}\n`);
+    this.errorOutput.write(`${message}\n`);
   }
 
   intro(title: string): void {
@@ -88,28 +130,30 @@ export class CliUi {
 
   success(message: string): void {
     if (this.options.quiet || this.options.json) return;
-    this.line(`${this.green("✓")} ${message}`);
+    this.line(this.rich ? `${this.green("✓")} ${message}` : message);
   }
 
   info(message: string): void {
     if (this.options.quiet || this.options.json) return;
-    this.line(`${this.blue("●")} ${message}`);
+    this.line(this.rich ? `${this.brand("●")} ${message}` : message);
   }
 
   warn(message: string): void {
     if (this.options.quiet || this.options.json) return;
-    this.line(`${this.yellow("⚠")} ${message}`);
+    this.line(
+      this.rich ? `${this.yellow("⚠")} ${message}` : `Warning: ${message}`,
+    );
   }
 
   step(message: string): void {
     if (this.options.quiet || this.options.json) return;
-    this.line(`${this.cyan("→")} ${message}`);
+    this.line(this.rich ? `${this.brand("→")} ${message}` : message);
   }
 
   note(message: string): void {
     if (this.options.quiet || this.options.json) return;
     for (const line of message.split("\n"))
-      this.line(`${this.dim("│")} ${line}`);
+      this.line(this.rich ? `${this.brand("│")} ${line}` : line);
   }
 
   json(value: unknown): void {
@@ -118,7 +162,7 @@ export class CliUi {
   }
 
   command(value: string): string {
-    return this.cyan(value);
+    return this.brand(value);
   }
 
   path(value: string): string {
@@ -130,16 +174,23 @@ export class CliUi {
   }
 
   branch(value: string): string {
-    return this.magenta(value);
+    return this.brand(value);
   }
 
   id(value: string): string {
     return this.dim(value);
   }
 
+  qualify(message: string, detail: string): string {
+    return this.rich ? `${message} · ${detail}` : `${message} (${detail})`;
+  }
+
   async confirm(question: string, defaultValue = false): Promise<boolean> {
     if (!this.isTTY || this.options.json || this.options.quiet) return false;
-    const reader = createInterface({ input: stdin, output: stdout });
+    const reader = createInterface({
+      input: this.input as typeof stdin,
+      output: this.output as typeof stdout,
+    });
     try {
       const suffix = defaultValue ? " [Y/n] " : " [y/N] ";
       while (true) {
@@ -185,38 +236,57 @@ export class CliUi {
       this.errorLine(JSON.stringify({ error: value }));
       return;
     }
-    this.errorLine(`${this.red("✖")} ${data.message}`);
-    if (data.hint) this.errorLine(`${this.cyan("→")} ${data.hint}`);
+    this.errorLine(
+      this.rich ? `${this.red("✖")} ${data.message}` : `Error: ${data.message}`,
+    );
+    if (data.hint)
+      this.errorLine(
+        this.rich ? `${this.brand("→")} ${data.hint}` : `Hint: ${data.hint}`,
+      );
     if (this.options.verbose && data.debug?.stack)
       this.errorLine(data.debug.stack);
   }
 
   brand(value: string): string {
-    return this.color ? pc.bold(pc.cyan(value)) : value;
+    return this.paint(value, [84, 160, 255], true);
   }
   green(value: string): string {
-    return this.color ? pc.green(value) : value;
+    return this.paint(value, [29, 209, 161]);
   }
   blue(value: string): string {
-    return this.color ? pc.blue(value) : value;
+    return this.paint(value, [84, 160, 255]);
   }
   yellow(value: string): string {
-    return this.color ? pc.yellow(value) : value;
+    return this.paint(value, [254, 202, 87]);
   }
   red(value: string): string {
-    return this.color ? pc.red(value) : value;
+    return this.paint(value, [255, 107, 107]);
   }
   cyan(value: string): string {
-    return this.color ? pc.cyan(value) : value;
+    return this.paint(value, [72, 219, 251]);
   }
   magenta(value: string): string {
-    return this.color ? pc.magenta(value) : value;
+    return this.paint(value, [95, 39, 205]);
   }
   dim(value: string): string {
     return this.color ? pc.dim(value) : value;
   }
   underline(value: string): string {
     return this.color ? pc.underline(value) : value;
+  }
+
+  spinnerStream(): typeof stdout {
+    return this.output as typeof stdout;
+  }
+
+  private paint(
+    value: string,
+    [red, green, blue]: [number, number, number],
+    bold = false,
+  ): string {
+    if (!this.color) return value;
+    const content = bold ? pc.bold(value) : value;
+    return `\u001B[38;2;${red};${green};${blue}m${content}\u001B[39m`;
   }
 }
 
@@ -230,8 +300,10 @@ export class UiSpinner {
   start(): void {
     if (this.ui.options.quiet || this.ui.options.json) return;
     if (this.ui.isTTY)
-      this.instance = ora({ text: this.message, stream: stdout }).start();
-    else this.ui.step(this.message);
+      this.instance = ora({
+        text: this.message,
+        stream: this.ui.spinnerStream(),
+      }).start();
   }
 
   update(message: string): void {
@@ -240,20 +312,14 @@ export class UiSpinner {
 
   succeed(message = this.message): void {
     if (this.instance) this.instance.succeed(message);
-    else if (!this.ui.options.quiet && !this.ui.options.json && !this.ui.isTTY)
-      this.ui.success(message);
   }
 
   warn(message = this.message): void {
     if (this.instance) this.instance.warn(message);
-    else if (!this.ui.options.quiet && !this.ui.options.json && !this.ui.isTTY)
-      this.ui.warn(message);
   }
 
   fail(message = this.message): void {
     if (this.instance) this.instance.fail(message);
-    else if (!this.ui.options.quiet && !this.ui.options.json && !this.ui.isTTY)
-      this.ui.errorLine(`${this.ui.red("✖")} ${message}`);
   }
 }
 

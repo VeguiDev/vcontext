@@ -17,6 +17,7 @@ import {
 } from "../auth/credentials.js";
 import { assertNoArgs, emit, outputOptions, takeOption } from "./common.js";
 import { IdentityStore } from "../runtime/identity.js";
+import { renderHeading, renderPairs, renderResult } from "../ui/renderers.js";
 
 const CLIENT_ID = "vcontext-cli";
 
@@ -120,25 +121,34 @@ export async function authCommand(
       fetcher,
       origin,
     );
-    emit(authStatusValue(credential, timestamp), output, () =>
-      getUi().success(`Logged in to ${origin}`),
-    );
+    emit(authStatusValue(credential, timestamp), output, (value, ui) => {
+      const status = value as ReturnType<typeof authStatusValue>;
+      renderResult(ui, ui.qualify("Logged in", ui.url(origin)), [
+        ["Access expires", status.expires_at],
+      ]);
+    });
     return;
   }
 
   let credential = await credentials.get(origin);
   if (subcommand === "status") {
     if (!credential) {
-      emit({ authenticated: false, origin }, output, () =>
-        getUi().info(`Not logged in to ${origin}`),
+      emit({ authenticated: false, origin }, output, (_value, ui) =>
+        ui.info(ui.qualify("Not logged in", ui.url(origin))),
       );
       return;
     }
     credential = await refreshIfNeeded(credential, credentials, fetcher, now());
-    emit(authStatusValue(credential, now()), output, (value) => {
+    emit(authStatusValue(credential, now()), output, (value, ui) => {
       const status = value as ReturnType<typeof authStatusValue>;
-      getUi().success(`Logged in to ${status.origin}`);
-      getUi().note(`Access token expires at ${status.expires_at}`);
+      renderHeading(ui, "Authentication");
+      renderPairs(ui, [
+        ["Status", ui.green("authenticated")],
+        ["Origin", ui.url(status.origin)],
+        ["API", ui.url(status.api_origin)],
+        ["Access expires", status.expires_at],
+        ["Refresh expires", status.refresh_expires_at],
+      ]);
     });
     return;
   }
@@ -151,8 +161,8 @@ export async function authCommand(
     );
   }
   await credentials.delete(origin);
-  emit({ authenticated: false, origin }, output, () =>
-    getUi().success(`Logged out from ${origin}`),
+  emit({ authenticated: false, origin }, output, (_value, ui) =>
+    ui.success(ui.qualify("Logged out", ui.url(origin))),
   );
 }
 

@@ -43,7 +43,7 @@ export function assertNoArgs(input: string[], usage: string): void {
 export function emit(
   value: unknown,
   output: OutputOptions,
-  human: HumanRenderer,
+  human: HumanRenderer = () => {},
 ): void {
   if (output.quiet) return;
   if (output.json) {

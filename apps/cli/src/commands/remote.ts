@@ -1,5 +1,6 @@
 import { DaemonClientError } from "@repo/daemon-client";
 import { getUi } from "../ui/index.js";
+import { renderResult, renderTable } from "../ui/renderers.js";
 import {
   assertNoArgs,
   emit,
@@ -50,7 +51,11 @@ export async function remoteCommand(
       `/projects/${encodeURIComponent(slug)}/remotes`,
       { name, url },
     );
-    emit(value, output, () => getUi().line(`Added remote ${name}: ${url}`));
+    emit(value, output, (_value, ui) =>
+      renderResult(ui, ui.qualify("Remote added", ui.brand(name)), [
+        ["URL", ui.url(url)],
+      ]),
+    );
     return;
   }
 
@@ -67,7 +72,11 @@ export async function remoteCommand(
     const path = await remotePath();
     assertNoArgs(input, usage);
     const value = await dependencies.requestValue("PATCH", path, { url });
-    emit(value, output, () => getUi().line(`Updated remote ${name}: ${url}`));
+    emit(value, output, (_value, ui) =>
+      renderResult(ui, ui.qualify("Remote updated", ui.brand(name)), [
+        ["URL", ui.url(url)],
+      ]),
+    );
     return;
   }
 
@@ -86,7 +95,9 @@ export async function remoteCommand(
     const path = await remotePath();
     assertNoArgs(input, usage);
     const value = await dependencies.requestValue("DELETE", path);
-    emit(value, output, () => getUi().line(`Removed remote ${name}`));
+    emit(value, output, (_value, ui) =>
+      ui.success(ui.qualify("Remote removed", ui.brand(name))),
+    );
     return;
   }
 
@@ -107,9 +118,11 @@ function takeProjectSelector(input: string[]): string[] {
 
 function printRemoteList(value: unknown): void {
   if (!Array.isArray(value)) return;
-  for (const item of value) {
-    if (isRemote(item)) getUi().line(`${item.name}\t${item.url}`);
-  }
+  renderTable(
+    getUi(),
+    ["Remote", "URL"],
+    value.flatMap((item) => (isRemote(item) ? [[item.name, item.url]] : [])),
+  );
 }
 
 function printRemoteUrl(value: unknown): void {

@@ -11,6 +11,7 @@ import {
   takeOption,
   type OutputOptions,
 } from "./common.js";
+import { renderResult } from "../ui/renderers.js";
 
 export interface SyncCommandDependencies {
   requestValue(method: string, path: string, body?: unknown): Promise<unknown>;
@@ -59,6 +60,7 @@ export async function cloneCommand(
     },
     output,
     yes,
+    "Cloning project context",
   );
   emit(value, output, (result) => printSyncResult("Cloned", result));
 }
@@ -155,6 +157,7 @@ async function projectSyncCommand(
     { remote, branch, force: action === "push" ? force : undefined, yes },
     output,
     yes,
+    `${action === "fetch" ? "Fetching" : action === "pull" ? "Pulling" : "Pushing"} project context`,
   );
   emit(value, output, (result) =>
     printSyncResult(
@@ -171,8 +174,9 @@ async function requestWithMove(
   body: Record<string, unknown>,
   output: OutputOptions,
   yes: boolean,
+  progress: string,
 ): Promise<unknown> {
-  let result = await getUi().run(`${method} ${path}`, () =>
+  let result = await getUi().run(progress, () =>
     dependencies.requestValue(method, path, body),
   );
   if (!isRemoteMoved(result)) return result;
@@ -199,7 +203,7 @@ async function requestWithMove(
       10,
     );
   }
-  result = await getUi().run(`${method} ${path}`, () =>
+  result = await getUi().run(progress, () =>
     dependencies.requestValue(method, path, {
       ...body,
       yes: true,
@@ -251,9 +255,34 @@ function takeOptionalPositional(input: string[]): string | undefined {
 }
 
 function printSyncResult(label: string, value: unknown): void {
-  if (typeof value === "object" && value !== null && "message" in value) {
-    getUi().line(String(value.message));
+  if (typeof value !== "object" || value === null) {
+    getUi().success(label);
     return;
   }
-  getUi().line(label);
+  const record = value as Record<string, unknown>;
+  const message =
+    typeof record.message === "string" && record.message.trim()
+      ? record.message
+      : label;
+  const keys = [
+    "project",
+    "project_slug",
+    "remote",
+    "branch",
+    "path",
+    "destination",
+    "imported",
+    "updated",
+    "pushed",
+    "fetched",
+  ];
+  renderResult(
+    getUi(),
+    message,
+    keys.flatMap((key) =>
+      record[key] === undefined
+        ? []
+        : [[key.replaceAll("_", " "), record[key]] as [string, unknown]],
+    ),
+  );
 }

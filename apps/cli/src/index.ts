@@ -25,6 +25,11 @@ import { identityCommand } from "./commands/identity.js";
 import { GitHooksManager } from "./runtime/git-hooks.js";
 import { remoteCommand } from "./commands/remote.js";
 import {
+  emit,
+  outputOptions as sharedOutputOptions,
+  type OutputOptions,
+} from "./commands/common.js";
+import {
   cloneCommand,
   fetchCommand,
   pullCommand,
@@ -40,9 +45,15 @@ import {
   renderDiff,
   renderEntity,
   renderEntityList,
+  renderEntityMutation,
   renderHistory,
   renderMigration,
+  renderObject,
+  renderContext,
+  renderPairs,
+  renderProjectInit,
   renderProjects,
+  renderResult,
   renderSnapshot,
   renderSnapshots,
   renderStatus,
@@ -186,7 +197,9 @@ async function entityCommand(entity: EntityCommandType, input: string[]) {
           ? renderHistory(entity, value, getUi())
           : subcommand === "delete"
             ? renderDeleted(value, getUi(), entity)
-            : renderEntity(entity, value, getUi()),
+            : subcommand === "update"
+              ? renderEntityMutation(entity, value, getUi(), "update")
+              : renderEntity(entity, value, getUi()),
     );
   }
 
@@ -205,7 +218,13 @@ async function entityCommand(entity: EntityCommandType, input: string[]) {
         body,
       ),
       output,
-      (value) => renderEntity(entity, value, getUi()),
+      (value) =>
+        renderEntityMutation(
+          entity,
+          value,
+          getUi(),
+          subcommand === "upsert" ? "upsert" : "create",
+        ),
     );
   }
 
@@ -562,61 +581,50 @@ function rejectWriteOnlyOptions(query: URLSearchParams) {
 }
 
 function outputOptions(input: string[]) {
-  const json = takeFlag(input, "--json") || getUi().options.json;
-  const quiet = takeFlag(input, "--quiet") || getUi().options.quiet;
-  if (json && quiet) {
-    throw new DaemonClientError("--json and --quiet are incompatible", 2);
-  }
-  return { json, quiet };
+  return sharedOutputOptions(input);
 }
 
 async function requestValue(method: string, route: string, body?: unknown) {
   return parseJson(await request(method, route, body));
 }
 
-function emit(
-  value: unknown,
-  output: { json: boolean; quiet: boolean },
-  human: (value: unknown) => void = () => {},
-) {
-  if (output.quiet) return;
-  if (output.json) {
-    getUi().json(value);
-    return;
-  }
-  human(value);
-}
-
 async function daemon(input: string[]) {
   const subcommand = input.shift();
+  const output = outputOptions(input);
   switch (subcommand) {
     case "start":
-      return daemonStart();
+      return daemonStart(output);
     case "status":
-      return daemonStatus();
+      return daemonStatus(output);
     case "stop":
-      return daemonStop();
+      return daemonStop(output);
     default:
       throw new DaemonClientError("Usage: vcontext daemon <start|status|stop>");
   }
 }
 
-async function daemonStart() {
+async function daemonStart(output: OutputOptions) {
   await ensureDaemon();
+  const value = { running: true };
+  emit(value, output, (_result, ui) => ui.success("Daemon running"));
 }
 
-async function daemonStatus() {
+async function daemonStatus(output: OutputOptions) {
   const pid = readPid();
 
   if (!pid) {
-    getUi().line("vcontext daemon is not running");
+    const value = { running: false };
+    emit(value, output, (_result, ui) => ui.info("Daemon is not running"));
     return;
   }
 
   if (!isProcessRunning(pid)) {
     removeStalePid();
-    getUi().line("vcontext daemon is not running");
-    getUi().line("Removed stale PID file");
+    const value = { running: false, stale_pid_removed: true };
+    emit(value, output, (_result, ui) => {
+      ui.info("Daemon is not running");
+      ui.note("Removed stale PID file");
+    });
     return;
   }
 
@@ -624,29 +632,42 @@ async function daemonStatus() {
     const response = await rawRequest("GET", "/daemon/status");
     const status = parseJson<{ pid: number }>(response);
 
-    getUi().line(`vcontext daemon is running with PID ${status.pid}`);
+    const value = { running: true, pid: status.pid, api: true };
+    emit(value, output, (_result, ui) =>
+      renderResult(ui, "Daemon is running", [["PID", status.pid]]),
+    );
   } catch {
-    getUi().line(`vcontext daemon process exists with PID ${pid}`);
-    getUi().line("The local API did not respond");
+    const value = { running: true, pid, api: false };
+    emit(value, output, (_result, ui) => {
+      ui.warn(`Daemon process exists with PID ${pid}`);
+      ui.note("The local API did not respond");
+    });
   }
 }
 
-async function daemonStop() {
+async function daemonStop(output: OutputOptions) {
   const pid = readPid();
 
   if (!pid || !isProcessRunning(pid)) {
     removeStalePid();
-    getUi().line("vcontext daemon is not running");
+    const value = { running: false };
+    emit(value, output, (_result, ui) => ui.info("Daemon is not running"));
     return;
   }
 
   try {
     await rawRequest("POST", "/daemon/stop");
-    getUi().line(`vcontext daemon stopping with PID ${pid}`);
+    const value = { stopping: true, pid, signal: "api" };
+    emit(value, output, (_result, ui) =>
+      ui.success(ui.qualify("Daemon stopping", `PID ${pid}`)),
+    );
     return;
   } catch {
     process.kill(pid, "SIGTERM");
-    getUi().line(`Sent SIGTERM to vcontext daemon PID ${pid}`);
+    const value = { stopping: true, pid, signal: "SIGTERM" };
+    emit(value, output, (_result, ui) =>
+      ui.success(ui.qualify("Sent SIGTERM", `PID ${pid}`)),
+    );
   }
 }
 
@@ -680,7 +701,12 @@ async function init(input: string[]) {
       localPath,
       linked.marker as Parameters<typeof writeProjectMarker>[1],
     );
-    emit(linked, output);
+    emit(linked, output, (value, ui) =>
+      renderProjectInit(value, ui, {
+        path: localPath,
+        remote: remoteProject,
+      }),
+    );
     return;
   }
 
@@ -707,13 +733,16 @@ async function init(input: string[]) {
   });
   const project = parseJson<{ slug: string; uuid: string }>(response);
 
-  emit(project, output);
+  emit(project, output, (value, ui) =>
+    renderProjectInit(value, ui, { path: localPath }),
+  );
 }
 
 async function gitCommand(input: string[]) {
   const action = input.shift();
   if (action === "hooks") {
     const operation = input.shift();
+    const output = outputOptions(input);
     if (
       input.length ||
       !operation ||
@@ -734,7 +763,9 @@ async function gitCommand(input: string[]) {
           : operation === "repair"
             ? manager.repair()
             : manager.uninstall();
-    getUi().line(JSON.stringify(result, null, 2));
+    emit(result, output, (value, ui) =>
+      renderObject(value, ui, `Git hooks ${operation}`),
+    );
     return;
   }
   if (action === "hook-event") {
@@ -772,6 +803,7 @@ function readStdin(): Promise<string> {
 
 async function syncQueueCommand(input: string[]) {
   const action = input.shift();
+  const output = outputOptions(input);
   if (!action || !["status", "retry"].includes(action) || input.length)
     throw new DaemonClientError("Usage: vcontext sync <status|retry>", 2);
   const slug = await resolveProjectSlug([]);
@@ -779,7 +811,9 @@ async function syncQueueCommand(input: string[]) {
     action === "status" ? "GET" : "POST",
     `/projects/${encodeURIComponent(slug)}/sync/queue${action === "retry" ? "/retry" : ""}`,
   );
-  getUi().line(JSON.stringify(value, null, 2));
+  emit(value, output, (result, ui) =>
+    renderObject(result, ui, `Sync queue ${action}`),
+  );
 }
 
 async function projectsCommand(input: string[]) {
@@ -806,7 +840,7 @@ async function giveContext(input: string[]) {
 
   if (output.quiet) return;
   if (output.json) return emit(parseJson(response), output);
-  getUi().line(response.body);
+  renderContext(response.body, getUi());
 }
 
 async function migration(input: string[]) {
@@ -1027,8 +1061,13 @@ async function mcpServe() {
     process.exit(1);
   }
 
-  getUi().line(`MCP endpoint: http://127.0.0.1:${port}/mcp`);
-  getUi().line("Stop with: vcontext daemon stop");
+  const endpoint = `http://127.0.0.1:${port}/mcp`;
+  if (getUi().options.json) getUi().json({ endpoint });
+  else
+    renderResult(getUi(), "MCP server ready", [
+      ["Endpoint", getUi().url(endpoint)],
+      ["Stop", getUi().command("vcontext daemon stop")],
+    ]);
 
   await new Promise(() => {});
 }
@@ -1038,43 +1077,105 @@ function version() {
 }
 
 function usage(command?: string) {
-  if (command) getUi().line(`${getUi().brand(`vcontext ${command}`)} help`);
-  getUi().line(`vcontext
-
-Usage:
-  vcontext auth <login|logout|status> [--host url]
-  vcontext identity <show|set> [--host url]
-  vcontext git hooks <install|status|repair|uninstall>
-  vcontext sync <status|retry>
-  vcontext remote <add|list|get-url|set-url|remove>
-  vcontext clone <url> [path]
-  vcontext fetch [remote] [branch]
-  vcontext pull [remote] [branch]
-  vcontext push [remote] [branch] [--force]
-  vcontext daemon <start|status|stop>
-  vcontext init <project name> [--remote namespace/slug] [--host url] [--description text] [--path path]
-  vcontext projects
-  vcontext status [project-slug] [--json|--quiet]
-  vcontext doc <list|show|add|update|delete|history>
-  vcontext prompt <list|show|add|update|delete|history>
-  vcontext task <list|show|add|update|delete|history>
-  vcontext change <list|show|add|update|delete|history>
-  vcontext file-context <list|show|add|update|delete|history|get-by-path|upsert>
-  vcontext branch <list|current|show|create|checkout|rename|delete>
-  vcontext snapshot <list|show|diff|checkout>
-  vcontext log [project-slug] [--branch name|--snapshot id] [--limit 50]
-  vcontext diff [project-slug] [--from ref] [--to ref]
-  vcontext merge <preview|apply> [project-slug] <source-branch> [--target branch]
-  vcontext migration <status|list|pending|run>
-  vcontext give-context [project-slug] [--json]
-  vcontext mcp [serve]
-
-Global options:
-  --help       Show help
-  --version    Show version
-  --verbose    Show diagnostic details
-  --quiet      Suppress successful output
-  --no-color   Disable colors
-  --yes        Accept confirmations
-  --json       Emit parseable JSON`);
+  const ui = getUi();
+  const groups: Array<{
+    title: string;
+    commands: Array<[string, string]>;
+  }> = [
+    {
+      title: "Setup",
+      commands: [
+        ["init <name> [--path path]", "Register a local project"],
+        ["projects", "List registered projects"],
+        ["status [project]", "Show project status"],
+        ["give-context [project]", "Render durable agent context"],
+      ],
+    },
+    {
+      title: "Context",
+      commands: [
+        ["doc <list|show|add|update|delete|history>", "Manage documents"],
+        ["prompt <list|show|add|update|delete|history>", "Manage prompts"],
+        ["task <list|show|add|update|delete|history>", "Manage tasks"],
+        ["change <list|show|add|delete|history>", "Manage change notes"],
+        [
+          "file-context <list|show|add|update|delete|history|upsert>",
+          "Manage path context",
+        ],
+      ],
+    },
+    {
+      title: "Versioning",
+      commands: [
+        [
+          "branch <list|current|show|create|checkout|rename|delete>",
+          "Manage branches",
+        ],
+        ["snapshot <list|show|diff|checkout>", "Inspect snapshots"],
+        ["log [project] [--limit count]", "Show snapshot history"],
+        ["diff [project] [--from ref] [--to ref]", "Compare snapshots"],
+        ["merge <preview|apply> <source>", "Merge context branches"],
+      ],
+    },
+    {
+      title: "Cloud & sync",
+      commands: [
+        ["auth <login|logout|status>", "Manage Cloud authentication"],
+        ["identity <show|set>", "Manage Cloud identity"],
+        ["remote <add|list|get-url|set-url|remove>", "Manage remotes"],
+        ["clone <url> [path]", "Clone shared context"],
+        ["fetch [remote] [branch]", "Fetch remote context"],
+        ["pull [remote] [branch]", "Pull and apply remote context"],
+        ["push [remote] [branch]", "Push local context"],
+        ["sync <status|retry>", "Inspect the sync queue"],
+      ],
+    },
+    {
+      title: "System",
+      commands: [
+        ["daemon <start|status|stop>", "Manage the local daemon"],
+        [
+          "git hooks <install|status|repair|uninstall>",
+          "Manage Git integration",
+        ],
+        ["migration <status|list|pending|run>", "Manage data migrations"],
+        ["mcp [serve]", "Run the MCP bridge or HTTP endpoint"],
+      ],
+    },
+  ];
+  const visible = command
+    ? groups
+        .map((group) => ({
+          ...group,
+          commands: group.commands.filter(([syntax]) =>
+            syntax.split(" ", 1)[0]!.split("|").includes(command),
+          ),
+        }))
+        .filter((group) => group.commands.length > 0)
+    : groups;
+  ui.line(
+    ui.rich
+      ? `${ui.brand("vcontext")} ${ui.dim("— git for AI context")}`
+      : "vcontext — git for AI context",
+  );
+  ui.line();
+  for (const group of visible) {
+    ui.line(ui.rich ? ui.brand(group.title) : `${group.title}:`);
+    const width = Math.max(...group.commands.map(([syntax]) => syntax.length));
+    for (const [syntax, description] of group.commands)
+      ui.line(
+        `  ${ui.command(`vcontext ${syntax}`.padEnd(width + 9))}  ${ui.dim(description)}`,
+      );
+    ui.line();
+  }
+  ui.line(ui.rich ? ui.brand("Global options") : "Global options:");
+  renderPairs(ui, [
+    ["--help", "Show help"],
+    ["--version", "Show version"],
+    ["--verbose", "Show diagnostic details"],
+    ["--quiet", "Suppress successful output"],
+    ["--no-color", "Disable colors"],
+    ["--yes", "Accept confirmations"],
+    ["--json", "Emit parseable JSON"],
+  ]);
 }
