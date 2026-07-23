@@ -291,6 +291,47 @@ export class CliUi {
     }
   }
 
+  updateAvailable(currentVersion: string, latestVersion: string): void {
+    if (!this.rich) return;
+    const content = `${this.dim(currentVersion)} ${this.brand("→")} ${this.brand(latestVersion)}`;
+    this.errorLine();
+    this.errorLine(
+      boxen(content, {
+        borderStyle: "round",
+        padding: { top: 0, right: 2, bottom: 0, left: 2 },
+        title: this.brand("Update available"),
+        titleAlignment: "left",
+        width: Math.min(this.columns, 48),
+        ...(this.color ? { borderColor: "#54a0ff" } : {}),
+      }),
+    );
+    this.errorLine();
+    this.errorLine(
+      `${this.brand("❯")} Run ${this.command(this.cli("update"))}`,
+    );
+  }
+
+  updateResult(
+    result:
+      | {
+          success: true;
+          previousVersion: string;
+          currentVersion: string;
+        }
+      | {
+          success: false;
+          currentVersion: string;
+          error?: string;
+        },
+  ): void {
+    if (!this.rich) return;
+    this.errorLine(
+      result.success
+        ? `${this.green("✓")} Updated vcontext ${result.previousVersion} ${this.brand("→")} ${result.currentVersion}`
+        : `${this.red("×")} Could not finish updating to ${result.currentVersion}${result.error ? `: ${result.error}` : "."}`,
+    );
+  }
+
   brand(value: string): string {
     return this.paint(value, [84, 160, 255], true);
   }

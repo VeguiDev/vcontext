@@ -295,7 +295,19 @@ Unix installs to a writable PATH directory when possible, otherwise `~/.local/bi
 
 Supported releases: Linux x64 and ARM64, macOS Intel and Apple Silicon, and Windows x64. To verify an archive manually, download its matching `vcontext-checksums.txt` from the same GitHub Release and run `sha256sum`, `shasum -a 256`, or `Get-FileHash -Algorithm SHA256`.
 
-To update, re-run the installer. To uninstall, remove `~/.local/bin/vcontext` (or the selected Unix install path), or `%LOCALAPPDATA%\Programs\vcontext\bin\vcontext.exe`; user configuration in `~/.vcontext` is intentionally retained.
+The official standalone CLI can check and install stable releases directly:
+
+```sh
+vcontext update --check
+vcontext update
+vcontext update --yes # Non-interactive confirmation
+```
+
+Interactive standalone commands check for updates at most once per day and show a notice when a newer release is available. Set `VCONTEXT_NO_UPDATE_CHECK=1` to disable that background check. The checker stays silent for redirected output, `--json`, `--quiet`, MCP, daemon, and development commands.
+
+Updates are downloaded from the project's GitHub Releases, verified against `vcontext-checksums.txt`, staged, and version-checked before replacement, with rollback protection. Unix replacement is atomic; on Windows it finishes after the running process exits and reports its result on the next interactive command. `vcontext-dev` and other Node-based installations are never self-modified; re-run the official installer when self-update is unavailable.
+
+To uninstall, remove `~/.local/bin/vcontext` (or the selected Unix install path), or `%LOCALAPPDATA%\Programs\vcontext\bin\vcontext.exe`; user configuration in `~/.vcontext` is intentionally retained.
 
 ### Creating a release
 

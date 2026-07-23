@@ -40,3 +40,5 @@ opencode.json
 # Misc
 .DS_Store
 *.pem
+
+/release/

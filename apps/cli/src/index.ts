@@ -35,8 +35,14 @@ import {
   pullCommand,
   pushCommand,
 } from "./commands/sync.js";
+import { updateCommand } from "./commands/update.js";
 import { configureUi, getUi, parseGlobalOptions } from "./ui/index.js";
 import { errorData } from "./ui/errors.js";
+import {
+  finishAutomaticUpdateCheck,
+  reportPendingUpdateResult,
+  startAutomaticUpdateCheck,
+} from "./update/automatic.js";
 import { VCONTEXT_VERSION } from "./version.js";
 import {
   renderBranch,
@@ -62,10 +68,14 @@ import {
 /** Run the CLI without assuming how the JavaScript runtime was started. */
 export async function runCli(args = process.argv.slice(2)): Promise<void> {
   const globalOptions = parseGlobalOptions(args);
-  configureUi(globalOptions);
+  const ui = configureUi(globalOptions);
+  const command = args[0];
+  await reportPendingUpdateResult(ui);
+  const updateCheck = startAutomaticUpdateCheck(command, ui);
 
   try {
     await main(args);
+    await finishAutomaticUpdateCheck(updateCheck, ui);
   } catch (error) {
     getUi().error(errorData(error));
     process.exitCode = error instanceof DaemonClientError ? error.exitCode : 1;
@@ -118,6 +128,7 @@ async function main(input: string[]) {
     branch: branchCommand,
     snapshot: snapshotCommand,
     merge: mergeCommand,
+    update: updateCommand,
     checkout: (args) => branchCommand(["checkout", ...args]),
   };
   const handler = commands[command];
@@ -1140,6 +1151,7 @@ function usage(command?: string) {
         ],
         ["migration <status|list|pending|run>", "Manage data migrations"],
         ["mcp [serve]", "Run the MCP bridge or HTTP endpoint"],
+        ["update [--check]", "Check for and install CLI updates"],
       ],
     },
   ];

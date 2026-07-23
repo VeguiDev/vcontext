@@ -251,6 +251,18 @@ test("quiet and json modes do not leak human status output", () => {
   );
 });
 
+test("update notices use the rich brand box and stay silent in plain output", () => {
+  const rich = captureUi({ columns: 60 });
+  rich.ui.updateAvailable("0.1.1+12", "0.1.1+13");
+  assert.match(rich.errors(), /╭ Update available ─+/);
+  assert.match(rich.errors(), /0\.1\.1\+12 → 0\.1\.1\+13/);
+  assert.match(rich.errors(), /❯ Run vcontext update/);
+
+  const plain = captureUi({ tty: false });
+  plain.ui.updateAvailable("0.1.1+12", "0.1.1+13");
+  assert.equal(plain.errors(), "");
+});
+
 test("unexpected errors have actionable diagnostics", () => {
   const value = errorData(new Error("internal detail"));
   assert.equal(value.code, "UNEXPECTED_ERROR");
