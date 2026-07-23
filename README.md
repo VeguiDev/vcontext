@@ -239,3 +239,37 @@ pnpm build
 - `apps/deamon/` — Background daemon with HTTP API over Unix socket
 - `apps/mcp/` — MCP server for agent integration
 - `packages/daemon-client/` — Shared HTTP client used by CLI and MCP
+
+## CLI output and automation
+
+The CLI uses human-readable output by default. Use `--json` for machine-readable success output and `--quiet` to suppress successful output. Errors are written to stderr; with `--json`, errors use an `{ "error": { "code", "message", "hint" } }` envelope.
+
+Global options include `--help`, `--version`, `--verbose`, `--quiet`, `--no-color`, `--yes`, and `--json`. Colors are automatically disabled for redirected output and whenever `NO_COLOR` is set. `VCONTEXT_DEBUG=1` is equivalent to verbose diagnostics.
+
+Commands that require confirmation can run non-interactively with `--yes`. Without a TTY, required confirmations fail with an actionable error instead of waiting for input.
+
+## Standalone installation
+
+Released binaries include their runtime; Node.js, npm, pnpm, and Bun are not required.
+
+```sh
+curl -fsSL https://vcontext.dev/install.sh | bash
+curl -fsSL https://vcontext.dev/install.sh | bash -s -- --version v1.2.3
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://vcontext.dev/install.ps1 | iex
+# Piped scripts accept VCONTEXT_VERSION, VCONTEXT_INSTALL_DIR and VCONTEXT_FORCE=1.
+```
+
+Unix installs to a writable PATH directory when possible, otherwise `~/.local/bin`; it never changes shell configuration or invokes sudo. Windows installs to `%LOCALAPPDATA%\Programs\vcontext\bin` and adds it to the user PATH. Use `--install-dir` / `-InstallDir` and `--force` / `-Force` to override those defaults.
+
+Supported releases: Linux x64 and ARM64, macOS Intel and Apple Silicon, and Windows x64. To verify an archive manually, download its matching `vcontext-checksums.txt` from the same GitHub Release and run `sha256sum`, `shasum -a 256`, or `Get-FileHash -Algorithm SHA256`.
+
+To update, re-run the installer. To uninstall, remove `~/.local/bin/vcontext` (or the selected Unix install path), or `%LOCALAPPDATA%\Programs\vcontext\bin\vcontext.exe`; user configuration in `~/.vcontext` is intentionally retained.
+
+### Creating a release
+
+Set `apps/cli/package.json` to the intended semantic version, then push a matching tag such as `v1.2.3`. The release workflow validates lint, types, tests, the tag/version match, builds all five native artifacts, writes checksums, and publishes the GitHub Release. macOS binaries are unsigned until the optional Apple signing and notarization secrets are configured, so Gatekeeper may show a warning.
