@@ -190,17 +190,18 @@ async function requestWithMove(
     );
   }
   if (!accepted) {
-    const payload = {
-      code: "REMOTE_MOVED",
-      location: result.location,
-      message:
-        result.message ?? "The remote moved; configuration was not changed.",
-    };
     throw new DaemonClientError(
-      output.json
-        ? JSON.stringify(payload)
-        : `${payload.message} New URL: ${payload.location}`,
+      result.message ?? "The remote moved; configuration was not changed.",
       10,
+      undefined,
+      {
+        code: "REMOTE_MOVED",
+        hint: "Re-run the command with `--yes` to accept the new location.",
+        details: {
+          location: result.location,
+          note: `New remote URL: ${result.location}`,
+        },
+      },
     );
   }
   result = await getUi().run(progress, () =>
@@ -210,7 +211,19 @@ async function requestWithMove(
     }),
   );
   if (isRemoteMoved(result)) {
-    throw new DaemonClientError("Remote move could not be accepted", 10);
+    throw new DaemonClientError(
+      "The remote move could not be accepted.",
+      10,
+      undefined,
+      {
+        code: "REMOTE_MOVED",
+        hint: "Check the remote URL and try again.",
+        details: {
+          location: result.location,
+          note: `Remote URL: ${result.location}`,
+        },
+      },
+    );
   }
   return result;
 }

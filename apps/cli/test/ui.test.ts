@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { DaemonClientError } from "@repo/daemon-client";
 import { configureUi, parseGlobalOptions } from "../src/ui/index.js";
 import { errorData } from "../src/ui/errors.js";
 
@@ -93,8 +94,80 @@ test("plain output removes ANSI and ornaments", () => {
   );
   assert.equal(
     capture.errors(),
-    "Error: Remote moved\nHint: Accept the new URL\n",
+    "Error: Remote moved\nCode: REMOTE_MOVED\nHint: Accept the new URL\n",
   );
+});
+
+test("rich errors separate message, metadata, notes, and recovery", () => {
+  const capture = captureUi();
+  capture.ui.error({
+    code: "PROJECT_NOT_FOUND",
+    status: 404,
+    message:
+      "This repository uses a legacy VContext marker and is not registered.",
+    notes: ["The repository was not modified."],
+    hint: "Run `vcontext init <project-name> --remote <namespace>/<slug> --path .` to upgrade it.",
+  });
+  assert.equal(
+    capture.errors(),
+    [
+      "vcontext / error",
+      "",
+      "✖ This repository uses a legacy VContext marker and is not registered.",
+      "│ PROJECT_NOT_FOUND · HTTP 404",
+      "│ The repository was not modified.",
+      "",
+      "→ Run `vcontext init <project-name> --remote <namespace>/<slug> --path .` to upgrade it.",
+      "",
+    ].join("\n"),
+  );
+});
+
+test("daemon errors preserve structured recovery metadata", () => {
+  const error = new DaemonClientError(
+    "This repository uses a legacy VContext marker.",
+    3,
+    undefined,
+    {
+      code: "PROJECT_NOT_FOUND",
+      status: 404,
+      hint: "Run `vcontext init demo --remote acme/demo --path .`.",
+      details: { note: "The repository was not modified." },
+    },
+  );
+  assert.deepEqual(errorData(error), {
+    code: "PROJECT_NOT_FOUND",
+    status: 404,
+    message: "This repository uses a legacy VContext marker.",
+    hint: "Run `vcontext init demo --remote acme/demo --path .`.",
+    notes: ["The repository was not modified."],
+    details: { note: "The repository was not modified." },
+    debug: { stack: error.stack },
+  });
+  assert.equal(
+    errorData(error, "vcontext-dev").hint,
+    "Run `vcontext-dev init demo --remote acme/demo --path .`.",
+  );
+  assert.equal(
+    errorData(
+      new DaemonClientError("Usage: vcontext status [project]", 2),
+      "vcontext-dev",
+    ).message,
+    "Usage: vcontext-dev status [project]",
+  );
+});
+
+test("legacy flattened API errors are normalized for older daemons", () => {
+  const value = errorData(
+    new DaemonClientError(
+      "API error 404: PROJECT_NOT_FOUND: Project missing. Run `vcontext projects`.",
+      3,
+    ),
+  );
+  assert.equal(value.code, "PROJECT_NOT_FOUND");
+  assert.equal(value.status, 404);
+  assert.equal(value.message, "Project missing");
+  assert.equal(value.hint, "Run `vcontext projects`.");
 });
 
 test("quiet and json modes do not leak human status output", () => {
@@ -107,6 +180,17 @@ test("quiet and json modes do not leak human status output", () => {
   json.ui.success("Hidden");
   json.ui.json({ ok: true });
   assert.equal(json.output(), '{\n  "ok": true\n}\n');
+
+  json.ui.error({
+    code: "PROJECT_NOT_FOUND",
+    status: 404,
+    message: "Project missing",
+    hint: "Run `vcontext projects`.",
+  });
+  assert.equal(
+    json.errors(),
+    '{"error":{"code":"PROJECT_NOT_FOUND","message":"Project missing","hint":"Run `vcontext projects`."}}\n',
+  );
 });
 
 test("unexpected errors have actionable diagnostics", () => {

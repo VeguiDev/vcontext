@@ -21,15 +21,35 @@ export interface CliResponse {
   body: string;
 }
 
+export interface DaemonClientErrorMetadata {
+  code?: string;
+  status?: number;
+  hint?: string;
+  details?: Record<string, unknown>;
+}
+
 export class DaemonClientError extends Error {
   readonly exitCode: number;
   readonly cause?: Error;
+  readonly code?: string;
+  readonly status?: number;
+  readonly hint?: string;
+  readonly details?: Record<string, unknown>;
 
-  constructor(message: string, exitCode = 1, cause?: Error) {
+  constructor(
+    message: string,
+    exitCode = 1,
+    cause?: Error,
+    metadata: DaemonClientErrorMetadata = {},
+  ) {
     super(message);
     this.name = "DaemonClientError";
     this.exitCode = exitCode;
     this.cause = cause;
+    this.code = metadata.code;
+    this.status = metadata.status;
+    this.hint = metadata.hint;
+    this.details = metadata.details;
   }
 }
 
@@ -82,10 +102,18 @@ function _socketRequest(
           };
 
           if (response.status >= 400) {
+            const error = responseError(response);
             reject(
               new DaemonClientError(
-                formatApiError(response),
+                error.message,
                 apiExitCode(response),
+                undefined,
+                {
+                  code: error.code,
+                  status: response.status,
+                  hint: detailString(error.details, "hint"),
+                  details: error.details,
+                },
               ),
             );
             return;
@@ -245,20 +273,35 @@ export async function ensureDaemon(): Promise<void> {
   );
 }
 
-function formatApiError(response: CliResponse): string {
+function responseError(response: CliResponse): {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+} {
   try {
     const parsed: unknown = JSON.parse(response.body);
 
     const error = apiError(parsed);
-    if (error) {
-      const message = error.message ? `: ${error.message}` : "";
-      return `API error ${response.status}: ${error.code}${message}`;
-    }
+    if (error)
+      return {
+        code: error.code,
+        message:
+          error.message ?? `Request failed with HTTP ${response.status}.`,
+        ...(error.details ? { details: error.details } : {}),
+      };
 
-    return `API error ${response.status}`;
+    return {
+      code: "HTTP_ERROR",
+      message: `Request failed with HTTP ${response.status}.`,
+    };
   } catch (error) {
     if (error instanceof SyntaxError) {
-      return `API error ${response.status}: ${response.body}`;
+      return {
+        code: "HTTP_ERROR",
+        message:
+          response.body.trim() ||
+          `Request failed with HTTP ${response.status}.`,
+      };
     }
     throw error;
   }
@@ -287,9 +330,14 @@ function apiExitCode(response: CliResponse) {
   }
 }
 
-function apiError(value: unknown): { code: string; message?: string } | null {
+function apiError(value: unknown): {
+  code: string;
+  message?: string;
+  details?: Record<string, unknown>;
+} | null {
   if (typeof value !== "object" || value === null) return null;
   const parsed = value as Record<string, unknown>;
+  const topLevelDetails = record(parsed.details);
 
   if (typeof parsed.error === "string") {
     return {
@@ -297,6 +345,7 @@ function apiError(value: unknown): { code: string; message?: string } | null {
       ...(typeof parsed.message === "string"
         ? { message: parsed.message }
         : {}),
+      ...(topLevelDetails ? { details: topLevelDetails } : {}),
     };
   }
 
@@ -306,9 +355,13 @@ function apiError(value: unknown): { code: string; message?: string } | null {
     typeof (parsed.error as Record<string, unknown>).code === "string"
   ) {
     const nested = parsed.error as Record<string, unknown>;
+    const nestedDetails = record(nested.details);
     return {
       code: nested.code as string,
-      ...(typeof nested.message === "string" ? { message: nested.message } : {}),
+      ...(typeof nested.message === "string"
+        ? { message: nested.message }
+        : {}),
+      ...(nestedDetails ? { details: nestedDetails } : {}),
     };
   }
 
@@ -318,10 +371,25 @@ function apiError(value: unknown): { code: string; message?: string } | null {
       ...(typeof parsed.message === "string"
         ? { message: parsed.message }
         : {}),
+      ...(topLevelDetails ? { details: topLevelDetails } : {}),
     };
   }
 
   return null;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function detailString(
+  details: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = details?.[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
 
 export {

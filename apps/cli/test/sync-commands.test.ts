@@ -245,7 +245,11 @@ describe("remote and sync commands", () => {
       (error) =>
         error instanceof DaemonClientError &&
         error.exitCode === 10 &&
-        JSON.parse(error.message).code === "REMOTE_MOVED",
+        error.code === "REMOTE_MOVED" &&
+        error.message === "The remote moved; configuration was not changed." &&
+        error.hint ===
+          "Re-run the command with `--yes` to accept the new location." &&
+        error.details?.location === "https://cloud.example/new/demo",
     );
     assert.equal(calls, 1);
   });

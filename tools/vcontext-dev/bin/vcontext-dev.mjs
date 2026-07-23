@@ -28,6 +28,7 @@ export function resolveDevEnvironment({
     ...env,
     VCONTEXT_HOME: devHome,
     VCONTEXT_KEYRING_SERVICE: "vcontext-cli-dev",
+    VCONTEXT_CLI_NAME: "vcontext-dev",
   };
 }
 

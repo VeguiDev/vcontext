@@ -44,7 +44,7 @@ function reference(value: unknown, ui: CliUi): string {
 export function renderHeading(ui: CliUi, title: string): void {
   ui.line(
     ui.rich
-      ? `${ui.dim("vcontext /")} ${ui.brand(title.toLowerCase())}`
+      ? `${ui.dim(`${ui.commandName} /`)} ${ui.brand(title.toLowerCase())}`
       : title,
   );
   ui.line();

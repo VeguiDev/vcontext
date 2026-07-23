@@ -79,13 +79,29 @@ export function createApp(services: AppServices) {
 
     if (error instanceof ApplicationError) {
       return c.json(
-        { error: error.code, code: error.code, message: error.message },
+        {
+          error: error.code,
+          code: error.code,
+          message: error.message,
+          ...(error.details === undefined ? {} : { details: error.details }),
+        },
         applicationErrorStatus[error.code] as 400,
       );
     }
 
     if (error instanceof VContextSyncError) {
-      const status = error.code === "UNAUTHENTICATED" ? 401 : error.code === "FORBIDDEN" ? 403 : error.code === "NON_FAST_FORWARD" || error.code === "REF_CONFLICT" || error.code === "OBJECT_COLLISION" ? 409 : error.code === "INTERNAL_ERROR" ? 500 : 400;
+      const status =
+        error.code === "UNAUTHENTICATED"
+          ? 401
+          : error.code === "FORBIDDEN"
+            ? 403
+            : error.code === "NON_FAST_FORWARD" ||
+                error.code === "REF_CONFLICT" ||
+                error.code === "OBJECT_COLLISION"
+              ? 409
+              : error.code === "INTERNAL_ERROR"
+                ? 500
+                : 400;
       return c.json(error.toJSON(), status as 400);
     }
 

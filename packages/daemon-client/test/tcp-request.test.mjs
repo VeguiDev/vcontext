@@ -18,6 +18,10 @@ test("rawRequest uses the daemon TCP port and exposes sync errors", async (t) =>
           error: {
             code: "INVALID_REQUEST",
             message: "Remote URL is invalid",
+            details: {
+              hint: "Run `vcontext remote set-url origin <url>`.",
+              note: "The remote was not changed.",
+            },
           },
         }),
       );
@@ -30,7 +34,9 @@ test("rawRequest uses the daemon TCP port and exposes sync errors", async (t) =>
 
   t.after(async () => {
     await new Promise((resolve, reject) => {
-      server.close((error) => (error === undefined ? resolve() : reject(error)));
+      server.close((error) =>
+        error === undefined ? resolve() : reject(error),
+      );
     });
     fs.rmSync(daemonHome, { recursive: true, force: true });
     delete process.env.VCONTEXT_HOME;
@@ -41,7 +47,8 @@ test("rawRequest uses the daemon TCP port and exposes sync errors", async (t) =>
   fs.writeFileSync(path.join(daemonHome, "vcontext.port"), `${address.port}\n`);
 
   // When: the client performs a raw daemon request.
-  const { DaemonClientError, rawRequest } = await import("../dist/src/index.js");
+  const { DaemonClientError, rawRequest } =
+    await import("../dist/src/index.js");
   const response = await rawRequest("GET", "/health");
 
   // Then: the response came from the TCP server selected by the port file.
@@ -52,7 +59,10 @@ test("rawRequest uses the daemon TCP port and exposes sync errors", async (t) =>
     (error) =>
       error instanceof DaemonClientError &&
       error.exitCode === 2 &&
-      error.message ===
-        "API error 400: INVALID_REQUEST: Remote URL is invalid",
+      error.message === "Remote URL is invalid" &&
+      error.code === "INVALID_REQUEST" &&
+      error.status === 400 &&
+      error.hint === "Run `vcontext remote set-url origin <url>`." &&
+      error.details?.note === "The remote was not changed.",
   );
 });

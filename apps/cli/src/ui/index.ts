@@ -20,6 +20,7 @@ export interface CliUiEnvironment {
   isTTY?: boolean;
   color?: boolean;
   columns?: number;
+  commandName?: string;
 }
 
 export interface CliOptions {
@@ -35,7 +36,10 @@ export interface CliOptions {
 export interface CliErrorData {
   code: string;
   message: string;
+  status?: number;
   hint?: string;
+  notes?: string[];
+  details?: Record<string, unknown>;
   debug?: { stack?: string; command?: string };
 }
 
@@ -89,6 +93,7 @@ export class CliUi {
   readonly isTTY: boolean;
   readonly color: boolean;
   readonly columns: number;
+  readonly commandName: string;
   private readonly input: UiReader;
   private readonly output: UiWriter;
   private readonly errorOutput: UiWriter;
@@ -105,6 +110,10 @@ export class CliUi {
       !options.noColor &&
       !options.json &&
       (environment.color ?? Boolean(this.output.isTTY));
+    this.commandName =
+      environment.commandName ??
+      process.env.VCONTEXT_CLI_NAME?.trim() ??
+      "vcontext";
     this.columns = Math.max(
       40,
       environment.columns ?? this.output.columns ?? 80,
@@ -185,6 +194,10 @@ export class CliUi {
     return this.rich ? `${message} · ${detail}` : `${message} (${detail})`;
   }
 
+  cli(command: string): string {
+    return `${this.commandName} ${command}`;
+  }
+
   async confirm(question: string, defaultValue = false): Promise<boolean> {
     if (!this.isTTY || this.options.json || this.options.quiet) return false;
     const reader = createInterface({
@@ -236,15 +249,36 @@ export class CliUi {
       this.errorLine(JSON.stringify({ error: value }));
       return;
     }
-    this.errorLine(
-      this.rich ? `${this.red("✖")} ${data.message}` : `Error: ${data.message}`,
-    );
-    if (data.hint)
+    const metadata = [
+      data.code !== "CLI_ERROR" ? data.code : undefined,
+      data.status ? `HTTP ${data.status}` : undefined,
+    ].filter(Boolean);
+    if (this.rich) {
       this.errorLine(
-        this.rich ? `${this.brand("→")} ${data.hint}` : `Hint: ${data.hint}`,
+        `${this.dim(`${this.commandName} /`)} ${this.red("error")}`,
       );
-    if (this.options.verbose && data.debug?.stack)
+      this.errorLine();
+      this.errorLine(`${this.red("✖")} ${data.message}`);
+      if (metadata.length)
+        this.errorLine(`${this.brand("│")} ${this.dim(metadata.join(" · "))}`);
+      for (const note of data.notes ?? [])
+        this.errorLine(`${this.brand("│")} ${note}`);
+      if (data.hint) {
+        this.errorLine();
+        this.errorLine(
+          `${this.brand("→")} ${this.formatInlineCode(data.hint)}`,
+        );
+      }
+    } else {
+      this.errorLine(`Error: ${data.message}`);
+      if (metadata.length) this.errorLine(`Code: ${metadata.join(" / ")}`);
+      for (const note of data.notes ?? []) this.errorLine(`Note: ${note}`);
+      if (data.hint) this.errorLine(`Hint: ${data.hint}`);
+    }
+    if (this.options.verbose && data.debug?.stack) {
+      this.errorLine();
       this.errorLine(data.debug.stack);
+    }
   }
 
   brand(value: string): string {
@@ -287,6 +321,13 @@ export class CliUi {
     if (!this.color) return value;
     const content = bold ? pc.bold(value) : value;
     return `\u001B[38;2;${red};${green};${blue}m${content}\u001B[39m`;
+  }
+
+  private formatInlineCode(value: string): string {
+    if (!this.color) return value;
+    return value.replace(/`([^`]+)`/g, (_match, command: string) =>
+      this.command(command),
+    );
   }
 }
 

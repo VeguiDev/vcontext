@@ -27,6 +27,7 @@ test("isolates development state from an existing production home", () => {
     path.join(path.resolve("user-home"), ".vcontext-dev"),
   );
   assert.equal(environment.VCONTEXT_KEYRING_SERVICE, "vcontext-cli-dev");
+  assert.equal(environment.VCONTEXT_CLI_NAME, "vcontext-dev");
 });
 
 test("resolves a configured development home from the caller directory", () => {

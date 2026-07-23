@@ -1066,7 +1066,7 @@ async function mcpServe() {
   else
     renderResult(getUi(), "MCP server ready", [
       ["Endpoint", getUi().url(endpoint)],
-      ["Stop", getUi().command("vcontext daemon stop")],
+      ["Stop", getUi().command(getUi().cli("daemon stop"))],
     ]);
 
   await new Promise(() => {});
@@ -1155,8 +1155,8 @@ function usage(command?: string) {
     : groups;
   ui.line(
     ui.rich
-      ? `${ui.brand("vcontext")} ${ui.dim("— git for AI context")}`
-      : "vcontext — git for AI context",
+      ? `${ui.brand(ui.commandName)} ${ui.dim("— git for AI context")}`
+      : `${ui.commandName} — git for AI context`,
   );
   ui.line();
   for (const group of visible) {
@@ -1164,7 +1164,7 @@ function usage(command?: string) {
     const width = Math.max(...group.commands.map(([syntax]) => syntax.length));
     for (const [syntax, description] of group.commands)
       ui.line(
-        `  ${ui.command(`vcontext ${syntax}`.padEnd(width + 9))}  ${ui.dim(description)}`,
+        `  ${ui.command(`${ui.commandName} ${syntax}`.padEnd(width + ui.commandName.length + 1))}  ${ui.dim(description)}`,
       );
     ui.line();
   }
