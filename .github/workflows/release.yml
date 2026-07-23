@@ -1,71 +1,195 @@
 name: Release
+
 on:
   push:
-    tags: ['v*']
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
-      tag: { description: 'Tag to build', required: false, type: string }
-      publish: { description: 'Publish this exact tag', required: false, default: false, type: boolean }
+      tag:
+        description: Tag to build, such as v1.2.3
+        required: false
+        type: string
+      publish:
+        description: Publish a release for the supplied tag
+        required: false
+        default: false
+        type: boolean
+
 permissions:
-  contents: write
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.tag.outputs.value }}
+      release-tag: ${{ steps.release-tag.outputs.value }}
     steps:
-      - uses: actions/checkout@v6
-        with: { ref: ${{ inputs.tag || github.ref }} }
-      - id: tag
-        run: echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v6
-      - uses: oven-sh/setup-bun@v2
-        with: { bun-version: 1.3.14 }
-      - uses: actions/setup-node@v6
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: bun scripts/validate-release-version.ts '${{ inputs.tag || github.ref_name }}'
-      - run: pnpm lint && pnpm check-types && pnpm -r --if-present test
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Resolve release tag
+        id: release-tag
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            echo "value=$REF_NAME" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$REQUESTED_TAG" ]]; then
+            echo "value=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate tag and package version
+        if: steps.release-tag.outputs.value != ''
+        env:
+          RELEASE_TAG: ${{ steps.release-tag.outputs.value }}
+        run: bun scripts/validate-release-version.ts "$RELEASE_TAG"
+
+      - name: Lint, typecheck, and test
+        run: pnpm lint && pnpm check-types && pnpm -r --if-present test
+
   build:
     needs: verify
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-latest, target: linux-x64 }
-          - { runner: ubuntu-24.04-arm, target: linux-arm64 }
-          - { runner: macos-13, target: darwin-x64 }
-          - { runner: macos-14, target: darwin-arm64 }
-          - { runner: windows-latest, target: windows-x64 }
+          - runner: ubuntu-latest
+            target: linux-x64
+            executable: release/bin/vcontext-linux-x64
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+            executable: release/bin/vcontext-linux-arm64
+          - runner: macos-15-intel
+            target: darwin-x64
+            executable: release/bin/vcontext-darwin-x64
+          - runner: macos-15
+            target: darwin-arm64
+            executable: release/bin/vcontext-darwin-arm64
+          - runner: windows-latest
+            target: windows-x64
+            executable: release/bin/vcontext-windows-x64.exe
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: oven-sh/setup-bun@v2
-        with: { bun-version: 1.3.14 }
-      - uses: actions/setup-node@v6
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: bun scripts/build-release.ts ${{ matrix.target }}
-      - shell: bash
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.verify.outputs.release-tag || github.ref }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build standalone executable
+        run: bun scripts/build-release.ts ${{ matrix.target }}
+
+      - name: Smoke test native executable
+        shell: bash
+        env:
+          EXECUTABLE: ${{ matrix.executable }}
         run: |
-          test -f release/bin/vcontext-${{ matrix.target }}${{ matrix.target == 'windows-x64' && '.exe' || '' }}
-          if [ '${{ matrix.target }}' = 'linux-x64' ] || [ '${{ matrix.target }}' = 'darwin-arm64' ]; then release/bin/vcontext-${{ matrix.target }} --version; release/bin/vcontext-${{ matrix.target }} --help; fi
-      - uses: actions/upload-artifact@v5
-        with: { name: bin-${{ matrix.target }}, path: release/bin/*, if-no-files-found: error }
-  publish:
-    needs: [verify, build]
+          test -f "$EXECUTABLE"
+          "$EXECUTABLE" --version
+          "$EXECUTABLE" --help
+
+      - name: Upload native executable
+        uses: actions/upload-artifact@v5
+        with:
+          name: bin-${{ matrix.target }}
+          path: release/bin/*
+          if-no-files-found: error
+          retention-days: 1
+
+  package:
+    needs:
+      - verify
+      - build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v5
-        with: { path: release/bin, merge-multiple: true }
-      - run: sh scripts/package-release.sh release/bin release/assets
-      - run: test $(find release/assets -maxdepth 1 -type f | wc -l) -eq 6
-      - if: github.event_name == 'push' || inputs.publish
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Download native executables
+        uses: actions/download-artifact@v5
+        with:
+          path: release/bin
+          merge-multiple: true
+
+      - name: Package release assets and checksums
+        run: sh scripts/package-release.sh release/bin release/assets
+
+      - name: Verify complete release asset set
+        shell: bash
+        run: |
+          test "$(find release/assets -maxdepth 1 -type f | wc -l)" -eq 6
+          test -f release/assets/vcontext-checksums.txt
+
+      - name: Upload packaged release assets
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-assets
+          path: release/assets/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs:
+      - verify
+      - package
+    if: github.event_name == 'push' || (inputs.publish && inputs.tag != '')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged release assets
+        uses: actions/download-artifact@v5
+        with:
+          name: release-assets
+          path: release/assets
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.verify.outputs.tag }}
-          prerelease: ${{ contains(needs.verify.outputs.tag, '-') }}
+          tag_name: ${{ needs.verify.outputs.release-tag }}
+          prerelease: ${{ contains(needs.verify.outputs.release-tag, '-') }}
           generate_release_notes: true
           files: release/assets/*
