@@ -14,15 +14,16 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.value }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { ref: ${{ inputs.tag || github.ref }} }
       - id: tag
         run: echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v6
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: 1.3.14 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with: { node-version: 22, cache: pnpm }
-      - run: corepack enable && pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: bun scripts/validate-release-version.ts '${{ inputs.tag || github.ref_name }}'
       - run: pnpm lint && pnpm check-types && pnpm -r --if-present test
   build:
@@ -38,25 +39,26 @@ jobs:
           - { runner: windows-latest, target: windows-x64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: 1.3.14 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with: { node-version: 22, cache: pnpm }
-      - run: corepack enable && pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: bun scripts/build-release.ts ${{ matrix.target }}
       - shell: bash
         run: |
           test -f release/bin/vcontext-${{ matrix.target }}${{ matrix.target == 'windows-x64' && '.exe' || '' }}
           if [ '${{ matrix.target }}' = 'linux-x64' ] || [ '${{ matrix.target }}' = 'darwin-arm64' ]; then release/bin/vcontext-${{ matrix.target }} --version; release/bin/vcontext-${{ matrix.target }} --help; fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with: { name: bin-${{ matrix.target }}, path: release/bin/*, if-no-files-found: error }
   publish:
     needs: [verify, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v5
         with: { path: release/bin, merge-multiple: true }
       - run: sh scripts/package-release.sh release/bin release/assets
       - run: test $(find release/assets -maxdepth 1 -type f | wc -l) -eq 6
