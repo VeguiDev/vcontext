@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import type {
   LoadedProjectMigration,
   ProjectMigration,
@@ -13,10 +13,7 @@ const MIGRATION_FILE =
   /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-.+\.(?:ts|js|mjs|cjs)$/;
 
 export async function loadProjectMigrations(directory?: string) {
-  const defaultDirectory = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "migrations",
-  );
+  if (directory === undefined) return embeddedMigrations;
   const resolvedDirectory = directory;
   const entries = await fs.readdir(resolvedDirectory, { withFileTypes: true });
   const loaded: LoadedProjectMigration[] = [];
