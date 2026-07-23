@@ -34,8 +34,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Test release version resolver
-        run: bun test scripts/resolve-release-version.test.ts
+      - name: Test release tooling
+        run: bun test scripts/resolve-release-version.test.ts scripts/build-release.test.ts
 
       - name: Lint
         run: pnpm lint
