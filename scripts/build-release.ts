@@ -13,6 +13,7 @@ const targets = {
 const selected = process.argv[2] as keyof typeof targets | undefined;
 if (selected && !(selected in targets)) throw new Error(`Unknown target: ${selected}`);
 const pkg = await Bun.file("apps/cli/package.json").json() as { version: string };
+const releaseVersion = process.env.VCONTEXT_RELEASE_VERSION ?? pkg.version;
 const output = resolve(process.env.VCONTEXT_RELEASE_DIR ?? "release/bin");
 if (!existsSync(output)) mkdirSync(output, { recursive: true });
 
@@ -23,7 +24,7 @@ for (const [name, target] of Object.entries(selected ? { [selected]: targets[sel
   const result = await Bun.build({
     entrypoints: ["apps/cli/src/standalone.ts"],
     compile: { target, outfile },
-    define: { VCONTEXT_VERSION_BUILD: JSON.stringify(pkg.version) },
+    define: { VCONTEXT_VERSION_BUILD: JSON.stringify(releaseVersion) },
     minify: false,
     sourcemap: "none",
   });

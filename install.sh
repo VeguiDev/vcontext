@@ -11,7 +11,7 @@ while [ "$#" -gt 0 ]; do case "$1" in --version) VERSION=${2:?missing version}; 
 case "${NO_COLOR:-}" in '') :;; *) :;; esac
 os=$(uname -s); arch=$(uname -m)
 case "$os:$arch" in Linux:x86_64|Linux:amd64) asset=vcontext-linux-x64.tar.gz;; Linux:aarch64|Linux:arm64) asset=vcontext-linux-arm64.tar.gz;; Darwin:x86_64) asset=vcontext-darwin-x64.tar.gz;; Darwin:arm64) asset=vcontext-darwin-arm64.tar.gz;; *) die "unsupported platform: $os $arch";; esac
-case "${VERSION:-latest}" in latest) base="https://github.com/$GITHUB_OWNER/$GITHUB_REPOSITORY/releases/latest/download";; v[0-9]*) base="https://github.com/$GITHUB_OWNER/$GITHUB_REPOSITORY/releases/download/$VERSION";; *) die "version must be latest or a v-prefixed semantic version";; esac
+case "${VERSION:-latest}" in latest) base="https://github.com/$GITHUB_OWNER/$GITHUB_REPOSITORY/releases/latest/download";; *) printf '%s\n' "$VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$' || die "version must be latest or a v-prefixed semantic version"; base="https://github.com/$GITHUB_OWNER/$GITHUB_REPOSITORY/releases/download/$VERSION";; esac
 command -v curl >/dev/null 2>&1 || die "curl is required"
 if command -v sha256sum >/dev/null 2>&1; then hash(){ sha256sum "$1" | awk '{print $1}'; }; elif command -v shasum >/dev/null 2>&1; then hash(){ shasum -a 256 "$1" | awk '{print $1}'; }; elif command -v openssl >/dev/null 2>&1; then hash(){ openssl dgst -sha256 "$1" | awk '{print $NF}'; }; else die "no SHA-256 tool found"; fi
 tmp=$(mktemp -d 2>/dev/null || mktemp -d -t vcontext); trap 'rm -rf "$tmp"' EXIT HUP INT TERM

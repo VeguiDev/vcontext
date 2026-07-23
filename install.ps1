@@ -6,7 +6,7 @@ function Fail([string]$Message) { throw "vcontext installer: $Message" }
 try {
   if (-not [Environment]::Is64BitOperatingSystem) { Fail 'Windows x64 is required.' }
   if ([string]::IsNullOrWhiteSpace($Version)) { $Version = 'latest' }
-  if ($Version -ne 'latest' -and $Version -notmatch '^v\d+\.\d+\.\d+([+-][0-9A-Za-z.-]+)?$') { Fail 'Version must be latest or a v-prefixed semantic version.' }
+  if ($Version -ne 'latest' -and $Version -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$') { Fail 'Version must be latest or a v-prefixed semantic version.' }
   $asset = 'vcontext-windows-x64.zip'
   $base = if ($Version -eq 'latest') { "https://github.com/$Owner/$Repository/releases/latest/download" } else { "https://github.com/$Owner/$Repository/releases/download/$Version" }
   if ([string]::IsNullOrWhiteSpace($InstallDir)) { $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\vcontext\bin' }

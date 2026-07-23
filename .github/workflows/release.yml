@@ -2,16 +2,12 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
   workflow_dispatch:
     inputs:
-      tag:
-        description: Tag to build, such as v1.2.3
-        required: false
-        type: string
       publish:
-        description: Publish a release for the supplied tag
+        description: Publish this manually triggered build
         required: false
         default: false
         type: boolean
@@ -23,28 +19,12 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     outputs:
-      release-tag: ${{ steps.release-tag.outputs.value }}
+      version: ${{ steps.release-version.outputs.version }}
+      tag: ${{ steps.release-version.outputs.tag }}
+      prerelease: ${{ steps.release-version.outputs.prerelease }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-        with:
-          ref: ${{ inputs.tag || github.ref }}
-
-      - name: Resolve release tag
-        id: release-tag
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          REQUESTED_TAG: ${{ inputs.tag }}
-        run: |
-          if [[ "$EVENT_NAME" == "push" ]]; then
-            echo "value=$REF_NAME" >> "$GITHUB_OUTPUT"
-          elif [[ -n "$REQUESTED_TAG" ]]; then
-            echo "value=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -64,11 +44,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate tag and package version
-        if: steps.release-tag.outputs.value != ''
+      - name: Resolve release version
+        id: release-version
         env:
-          RELEASE_TAG: ${{ steps.release-tag.outputs.value }}
-        run: bun scripts/validate-release-version.ts "$RELEASE_TAG"
+          VCONTEXT_BUILD_NUMBER: ${{ github.run_number }}
+        run: bun scripts/resolve-release-version.ts "$VCONTEXT_BUILD_NUMBER"
+
+      - name: Test release version resolver
+        run: bun test scripts/resolve-release-version.test.ts
 
       - name: Lint, typecheck, and test
         run: pnpm lint && pnpm check-types && pnpm -r --if-present test
@@ -98,8 +81,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.verify.outputs.release-tag || github.ref }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -120,15 +101,18 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build standalone executable
+        env:
+          VCONTEXT_RELEASE_VERSION: ${{ needs.verify.outputs.version }}
         run: bun scripts/build-release.ts ${{ matrix.target }}
 
       - name: Smoke test native executable
         shell: bash
         env:
           EXECUTABLE: ${{ matrix.executable }}
+          EXPECTED_VERSION: ${{ needs.verify.outputs.version }}
         run: |
           test -f "$EXECUTABLE"
-          "$EXECUTABLE" --version
+          test "$("$EXECUTABLE" --version)" = "$EXPECTED_VERSION"
           "$EXECUTABLE" --help
 
       - name: Upload native executable
@@ -175,7 +159,7 @@ jobs:
     needs:
       - verify
       - package
-    if: github.event_name == 'push' || (inputs.publish && inputs.tag != '')
+    if: github.event_name == 'push' || inputs.publish
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -187,9 +171,14 @@ jobs:
           path: release/assets
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ needs.verify.outputs.release-tag }}
-          prerelease: ${{ contains(needs.verify.outputs.release-tag, '-') }}
+          tag_name: ${{ needs.verify.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: vcontext ${{ needs.verify.outputs.version }}
+          draft: false
+          prerelease: ${{ needs.verify.outputs.prerelease }}
+          make_latest: ${{ needs.verify.outputs.prerelease == 'true' && 'false' || 'true' }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: release/assets/*

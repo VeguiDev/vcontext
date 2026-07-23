@@ -8,7 +8,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
     "test": "pnpm -r --if-present test",
-    "release:validate": "bun scripts/validate-release-version.ts",
+    "release:version": "bun scripts/resolve-release-version.ts",
     "release:build": "bun scripts/build-release.ts"
   },
   "devDependencies": {
