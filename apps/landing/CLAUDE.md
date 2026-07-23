@@ -1,3 +1,13 @@
+## Design system
+
+Before changing UI, layout, styling, animation, content hierarchy, or visual
+assets, read [DESIGN.md](./DESIGN.md) completely. Treat it as the source of
+truth for the landing's tokens and component language.
+
+If an intentional change modifies the design system, update `DESIGN.md` in the
+same change. Do not introduce one-off colors, spacing values, breakpoints, or
+component patterns without documenting the decision there.
+
 ## Development
 
 When starting the dev server, use background mode:
@@ -20,3 +30,4 @@ Consult these guides before working on related tasks:
 - [Adding or managing content](https://docs.astro.build/en/guides/content-collections/)
 - [Adding styles or using Tailwind](https://docs.astro.build/en/guides/styling/)
 - [Supporting multiple languages](https://docs.astro.build/en/guides/internationalization/)
+- [Using the Cloudflare adapter](https://docs.astro.build/en/guides/integrations-guide/cloudflare/)
