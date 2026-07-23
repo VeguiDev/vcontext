@@ -7,6 +7,7 @@ import type {
   ProjectMigration,
 } from "./migration-types.js";
 import { compareSemver, parseSemver } from "./semver.js";
+import { embeddedMigrations } from "./migrations.generated.js";
 
 const MIGRATION_FILE =
   /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-.+\.(?:ts|js|mjs|cjs)$/;
@@ -16,7 +17,7 @@ export async function loadProjectMigrations(directory?: string) {
     path.dirname(fileURLToPath(import.meta.url)),
     "migrations",
   );
-  const resolvedDirectory = directory ?? defaultDirectory;
+  const resolvedDirectory = directory;
   const entries = await fs.readdir(resolvedDirectory, { withFileTypes: true });
   const loaded: LoadedProjectMigration[] = [];
 

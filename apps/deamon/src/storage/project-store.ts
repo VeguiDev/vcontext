@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import type Database from "better-sqlite3";
+import type Database from "./database.js";
 import { GitAwareStore } from "./git-aware-store.js";
 import { projectConfigPath } from "./paths.js";
 import {

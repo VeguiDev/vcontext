@@ -1,11 +1,11 @@
-import type Database from "better-sqlite3";
+import type Database from "../storage/database.js";
 import type { RegisteredProject } from "../storage/registry-store.js";
 
 export interface ProjectMigrationContext {
   project: RegisteredProject;
   cwd: string;
-  mainDb: Database.Database;
-  scopedDb: Database.Database;
+  mainDb: Database;
+  scopedDb: Database;
   fromVersion: string;
   toVersion: string;
   log(message: string): void;

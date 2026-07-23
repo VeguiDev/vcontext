@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
+import Database from "../storage/database.js";
 import {
   SYNC_LIMITS,
   SYNC_PROTOCOL_VERSION,
@@ -348,7 +348,7 @@ function selectRemote(store: Awaited<ReturnType<ProjectService["openStore"]>>, n
   return selected;
 }
 
-function isAncestor(db: Database.Database, ancestor: string, descendant: string) {
+function isAncestor(db: Database, ancestor: string, descendant: string) {
   return Boolean(db.prepare(`WITH RECURSIVE ancestry(id) AS (SELECT ? UNION SELECT parent_snapshot_id FROM snapshot_parent JOIN ancestry ON snapshot_id = ancestry.id) SELECT 1 FROM ancestry WHERE id = ? LIMIT 1`).get(descendant, ancestor));
 }
 

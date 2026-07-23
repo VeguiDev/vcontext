@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type Database from "better-sqlite3";
+import type Database from "../storage/database.js";
 import { withProjectMigrationLock } from "./migration-lock.js";
 import {
   errorMessage,
@@ -22,8 +22,8 @@ const BACKUP_PREFIX = "migration_backup:";
 export interface ProjectMigrationRunnerOptions {
   project: RegisteredProject;
   cwd: string;
-  mainDb: Database.Database;
-  scopedDb: Database.Database;
+  mainDb: Database;
+  scopedDb: Database;
   migrations: LoadedProjectMigration[];
   projectDirectory?: string;
   projectJsonPath?: string;
@@ -34,8 +34,8 @@ export interface ProjectMigrationRunnerOptions {
 export class ProjectMigrationRunner {
   readonly project: RegisteredProject;
   readonly cwd: string;
-  readonly mainDb: Database.Database;
-  readonly scopedDb: Database.Database;
+  readonly mainDb: Database;
+  readonly scopedDb: Database;
   readonly migrations: LoadedProjectMigration[];
   private readonly projectDirectory: string;
   private readonly projectJsonPath: string;

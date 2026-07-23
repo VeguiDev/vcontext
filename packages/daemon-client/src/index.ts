@@ -174,6 +174,11 @@ export function daemonEntry(): string {
   );
 }
 
+function daemonCommand(): string[] {
+  if (process.env.VCONTEXT_STANDALONE === "1") return ["__vcontext_daemon"];
+  return [daemonEntry()];
+}
+
 export async function ensureDaemon(): Promise<void> {
   try {
     await _socketRequest("GET", "/health");

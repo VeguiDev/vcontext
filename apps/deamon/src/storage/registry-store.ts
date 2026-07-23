@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
-import Database from "better-sqlite3";
+import Database from "./database.js";
 import slugify from "slugify";
 import { migrateRegistry } from "./schema.js";
 import {

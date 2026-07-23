@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import Database from "better-sqlite3";
+import Database from "../storage/database.js";
 import { loadProjectMigrations } from "./migration-loader.js";
 import { ProjectMigrationRunner } from "./migration-runner.js";
 import type { LoadedProjectMigration } from "./migration-types.js";

@@ -1,4 +1,4 @@
-import type { Database } from "better-sqlite3";
+import type { Database } from "./database.js";
 import type { SnapshotMetadata } from "@vcontext/versioning-contract";
 
 export const SYNC_JOB_OPERATIONS = ["FETCH", "PULL", "PUSH", "CREATE_REMOTE_BRANCH", "LINK_SNAPSHOT_COMMIT"] as const;

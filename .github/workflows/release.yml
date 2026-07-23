@@ -1,0 +1,69 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag: { description: 'Tag to build', required: false, type: string }
+      publish: { description: 'Publish this exact tag', required: false, default: false, type: boolean }
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: ${{ inputs.tag || github.ref }} }
+      - id: tag
+        run: echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.3.14 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - run: bun scripts/validate-release-version.ts '${{ inputs.tag || github.ref_name }}'
+      - run: pnpm lint && pnpm check-types && pnpm -r --if-present test
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, target: linux-x64 }
+          - { runner: ubuntu-24.04-arm, target: linux-arm64 }
+          - { runner: macos-13, target: darwin-x64 }
+          - { runner: macos-14, target: darwin-arm64 }
+          - { runner: windows-latest, target: windows-x64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.3.14 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - run: bun scripts/build-release.ts ${{ matrix.target }}
+      - shell: bash
+        run: |
+          test -f release/bin/vcontext-${{ matrix.target }}${{ matrix.target == 'windows-x64' && '.exe' || '' }}
+          if [ '${{ matrix.target }}' = 'linux-x64' ] || [ '${{ matrix.target }}' = 'darwin-arm64' ]; then release/bin/vcontext-${{ matrix.target }} --version; release/bin/vcontext-${{ matrix.target }} --help; fi
+      - uses: actions/upload-artifact@v4
+        with: { name: bin-${{ matrix.target }}, path: release/bin/*, if-no-files-found: error }
+  publish:
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: release/bin, merge-multiple: true }
+      - run: sh scripts/package-release.sh release/bin release/assets
+      - run: test $(find release/assets -maxdepth 1 -type f | wc -l) -eq 6
+      - if: github.event_name == 'push' || inputs.publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.verify.outputs.tag }}
+          prerelease: ${{ contains(needs.verify.outputs.tag, '-') }}
+          generate_release_notes: true
+          files: release/assets/*
