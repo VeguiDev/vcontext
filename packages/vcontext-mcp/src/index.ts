@@ -11,7 +11,7 @@ export * from "./schemas.js";
 export { createToolDefinitions, type ToolDefinition } from "./tools.js";
 
 export function buildMcp(api: VContextAPI): McpServer {
-  const server = new McpServer({ name: "vcontext", version: "0.1.0" });
+  const server = new McpServer({ name: "vcontext", version: "0.1.1" });
   const tools = createToolDefinitions(api);
 
   for (const tool of tools) {
