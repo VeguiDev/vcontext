@@ -35,12 +35,24 @@ const { id = "hero-install", inverted = false } = Astro.props;
     const copyButton = root.querySelector<HTMLButtonElement>("[data-copy-button]");
     const copyLabel = root.querySelector<HTMLElement>("[data-copy-label]");
     const status = root.querySelector<HTMLElement>("[data-copy-status]");
+    const detectedPlatform =
+      (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ||
+      navigator.platform ||
+      navigator.userAgent;
+    const detectedShell: keyof typeof commands = /windows|win32|win64/i.test(detectedPlatform)
+      ? "powershell"
+      : "shell";
+    const selectShell = (shell: keyof typeof commands) => {
+      if (!output || !commands[shell]) return;
+      output.textContent = commands[shell];
+      tabs.forEach((item) => item.setAttribute("aria-selected", String(item.dataset.shell === shell)));
+    };
+
+    selectShell(detectedShell);
     tabs.forEach((tab) => {
       tab.addEventListener("click", () => {
         const shell = tab.dataset.shell as keyof typeof commands;
-        if (!output || !commands[shell]) return;
-        output.textContent = commands[shell];
-        tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+        selectShell(shell);
       });
     });
     copyButton?.addEventListener("click", async () => {
@@ -67,4 +79,3 @@ const { id = "hero-install", inverted = false } = Astro.props;
     });
   });
 </script>
-

@@ -675,9 +675,9 @@ code {
   justify-self: end;
 }
 .terminal-window__body {
-  min-height: 29rem;
+  min-height: 25rem;
   padding: clamp(1.3rem, 3vw, 2.4rem);
-  font: clamp(0.67rem, 1vw, 0.82rem)/1.8 var(--mono);
+  font: clamp(0.67rem, 1vw, 0.8rem)/1.65 var(--mono);
 }
 .terminal-window__body p {
   margin: 0 0 0.45rem;
@@ -695,33 +695,37 @@ code {
   color: #7e827b !important;
 }
 .terminal-status__heading strong,
-.terminal-status__branch,
-.terminal-status__pairs i,
-.terminal-status__change i {
+.terminal-status__branch {
   color: var(--accent);
 }
 .terminal-status__pairs {
   display: grid;
-  grid-template-columns: 7.4rem 1fr;
-  gap: 0.1rem 1rem;
+  gap: 0.18rem;
+  margin: 0;
+  padding-left: 1rem;
+  border-left: 2px solid var(--accent);
 }
-.terminal-status__pairs span {
+.terminal-status__pairs > div {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 1rem;
+}
+.terminal-status__pairs dt {
   color: #7e827b;
 }
-.terminal-status__pairs i,
-.terminal-status__change i {
-  margin-right: 0.65rem;
-  font-style: normal;
-}
-.terminal-status__pairs strong {
+.terminal-status__pairs dd {
+  margin: 0;
+  color: var(--white);
   font-weight: 500;
 }
 .terminal-status__section {
-  margin: 1rem 0 0 !important;
+  margin: 1.1rem 0 0.1rem !important;
   color: var(--accent);
 }
 .terminal-status__change {
   margin: 0 !important;
+  padding-left: 1rem;
+  border-left: 2px solid var(--accent);
 }
 .terminal-cursor {
   display: flex;
