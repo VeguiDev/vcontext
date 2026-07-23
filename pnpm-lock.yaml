@@ -59,7 +59,7 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: ^1.19.14
-        version: 1.19.14(hono@4.12.18)
+        version: 1.19.14(hono@4.12.27)
       '@modelcontextprotocol/sdk':
         specifier: ^1.13.0
         version: 1.29.0(zod@4.4.3)
@@ -82,8 +82,8 @@ importers:
         specifier: ^3.3.3
         version: 3.3.3
       hono:
-        specifier: ^4.12.18
-        version: 4.12.18
+        specifier: ^4.12.27
+        version: 4.12.27
       slugify:
         specifier: ^1.6.9
         version: 1.6.9
@@ -1922,6 +1922,10 @@ packages:
     resolution: {integrity: sha512-RWzP96k/yv0PQfyXnWjs6zot20TqfpfsNXhOnev8d1InAxubW93L11/oNUc3tQqn2G0bSdAOBpX+2uDFHV7kdQ==}
     engines: {node: '>=16.9.0'}
 
+  hono@4.12.27:
+    resolution: {integrity: sha512-1yrb/+w6HWQJrUCLkJ2IF5jNIPvvFkblV5RNOYl6bV+OA6p9GLcMpHFFGTosSvHvcAUibuUukRqhlYI4z32C7Q==}
+    engines: {node: '>=16.9.0'}
+
   html-escaper@3.0.3:
     resolution: {integrity: sha512-RuMffC89BOWQoY0WKGpIhn5gX3iI54O6nRA0yC124NYVtzjmFWBIiFd8M0x+ZdX0P9R4lADg1mgP8C7PxGOWuQ==}
 
@@ -3322,6 +3326,10 @@ snapshots:
     dependencies:
       hono: 4.12.18
 
+  '@hono/node-server@1.19.14(hono@4.12.27)':
+    dependencies:
+      hono: 4.12.27
+
   '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.34.5':
@@ -4518,6 +4526,8 @@ snapshots:
       space-separated-tokens: 2.0.2
 
   hono@4.12.18: {}
+
+  hono@4.12.27: {}
 
   html-escaper@3.0.3: {}
 
