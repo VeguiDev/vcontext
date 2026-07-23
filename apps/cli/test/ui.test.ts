@@ -111,15 +111,73 @@ test("rich errors separate message, metadata, notes, and recovery", () => {
   assert.equal(
     capture.errors(),
     [
-      "vcontext / error",
+      "╭ × Error ─────────────────────────────────────────────────────────────────────────────╮",
+      "│                                                                                      │",
+      "│  This repository uses a legacy VContext marker and is not registered.                │",
+      "│                                                                                      │",
+      "│  PROJECT_NOT_FOUND · HTTP 404                                                        │",
+      "│  The repository was not modified.                                                    │",
+      "│                                                                                      │",
+      "╰──────────────────────────────────────────────────────────────────────────────────────╯",
       "",
-      "✖ This repository uses a legacy VContext marker and is not registered.",
-      "│ PROJECT_NOT_FOUND · HTTP 404",
-      "│ The repository was not modified.",
-      "",
-      "→ Run `vcontext init <project-name> --remote <namespace>/<slug> --path .` to upgrade it.",
+      "❯ Run `vcontext init <project-name> --remote <namespace>/<slug> --path .` to upgrade it.",
       "",
     ].join("\n"),
+  );
+});
+
+test("rich error boxes wrap to narrow terminals", () => {
+  const capture = captureUi({ columns: 40 });
+  capture.ui.error({
+    code: "PROJECT_NOT_FOUND",
+    status: 404,
+    message:
+      "This repository uses a legacy VContext marker and is not registered.",
+    notes: ["The repository was not modified."],
+    hint: "Run `vcontext init <project-name> --path .` to upgrade it.",
+  });
+  assert.equal(
+    capture.errors(),
+    [
+      "╭ × Error ─────────────────────────────╮",
+      "│                                      │",
+      "│  This repository uses a legacy       │",
+      "│  VContext marker and is not          │",
+      "│  registered.                         │",
+      "│                                      │",
+      "│  PROJECT_NOT_FOUND · HTTP 404        │",
+      "│  The repository was not modified.    │",
+      "│                                      │",
+      "╰──────────────────────────────────────╯",
+      "",
+      "❯ Run `vcontext init <project-name> --path .` to upgrade it.",
+      "",
+    ].join("\n"),
+  );
+  assert.ok(
+    capture
+      .errors()
+      .split("\n")
+      .filter((line) => line.startsWith("│") || line.startsWith("╭"))
+      .every((line) => line.length <= 40),
+  );
+});
+
+test("rich error titles and recovery actions use semantic colors", () => {
+  const capture = captureUi({ color: true, columns: 60 });
+  capture.ui.error({
+    code: "CLI_ERROR",
+    message: "Something failed.",
+    hint: "Run `vcontext status`.",
+  });
+  assert.match(capture.errors(), /\u001B\[38;2;255;107;107m× Error\u001B\[39m/);
+  assert.match(
+    capture.errors(),
+    /\u001B\[38;2;84;160;255m\u001B\[1m❯\u001B\[22m\u001B\[39m/,
+  );
+  assert.match(
+    capture.errors(),
+    /\u001B\[38;2;84;160;255m\u001B\[1mvcontext status\u001B\[22m\u001B\[39m/,
   );
 });
 

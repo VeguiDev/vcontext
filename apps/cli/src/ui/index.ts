@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, stderr } from "node:process";
+import boxen from "boxen";
 import pc from "picocolors";
 import ora, { type Ora } from "ora";
 
@@ -252,21 +253,30 @@ export class CliUi {
     const metadata = [
       data.code !== "CLI_ERROR" ? data.code : undefined,
       data.status ? `HTTP ${data.status}` : undefined,
-    ].filter(Boolean);
+    ].filter((value): value is string => Boolean(value));
     if (this.rich) {
+      const secondary = [
+        ...(metadata.length ? [this.dim(metadata.join(" · "))] : []),
+        ...(data.notes ?? []),
+      ];
+      const content = [
+        data.message,
+        ...(secondary.length ? ["", ...secondary] : []),
+      ].join("\n");
       this.errorLine(
-        `${this.dim(`${this.commandName} /`)} ${this.red("error")}`,
+        boxen(content, {
+          borderStyle: "round",
+          padding: { top: 1, right: 2, bottom: 1, left: 2 },
+          title: this.red("× Error"),
+          titleAlignment: "left",
+          width: Math.min(this.columns, 88),
+          ...(this.color ? { borderColor: "#ff6b6b" } : {}),
+        }),
       );
-      this.errorLine();
-      this.errorLine(`${this.red("✖")} ${data.message}`);
-      if (metadata.length)
-        this.errorLine(`${this.brand("│")} ${this.dim(metadata.join(" · "))}`);
-      for (const note of data.notes ?? [])
-        this.errorLine(`${this.brand("│")} ${note}`);
       if (data.hint) {
         this.errorLine();
         this.errorLine(
-          `${this.brand("→")} ${this.formatInlineCode(data.hint)}`,
+          `${this.brand("❯")} ${this.formatInlineCode(data.hint)}`,
         );
       }
     } else {
