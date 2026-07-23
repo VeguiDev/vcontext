@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
-import Database from "./database.js";
+import Database, { type Database as DatabaseConnection } from "./database.js";
 import slugify from "slugify";
 import { migrateRegistry } from "./schema.js";
 import {
@@ -44,7 +44,7 @@ export interface ImportProjectInput extends CreateProjectInput {
 }
 
 export class RegistryStore {
-  readonly db: Database.Database;
+  readonly db: DatabaseConnection;
 
   constructor(dbPath = REGISTRY_DB_PATH) {
     fs.mkdirSync(VCONTEXT_HOME, { recursive: true });

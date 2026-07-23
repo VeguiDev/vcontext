@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
-    "test": "pnpm build && node --test \"dist/test/*.test.js\"",
+    "test": "pnpm --dir ../.. exec turbo run build --filter=@app/cli... --filter=@app/deamon... && node -e \"require('node:fs').accessSync('dist/test/cli-vcontext-api.test.js')\" && node --test \"dist/test/*.test.js\"",
     "start": "node dist/src/index.js",
     "lint": "prettier --check src/**/*.ts test/**/*.ts",
     "check-types": "tsc --noEmit"

@@ -1,6 +1,18 @@
 #!/usr/bin/env bun
 import { mkdirSync, existsSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
+const daemonDatabaseImport = resolve("apps/deamon/src/storage/database.js");
+const bunDatabaseAdapter = resolve("apps/deamon/src/storage/database.bun.ts");
+const standaloneDatabasePlugin = {
+  name: "standalone-database",
+  setup(builder: any) {
+    builder.onResolve({ filter: /database\.js$/ }, (args: any) => {
+      if (resolve(args.resolveDir, args.path) === daemonDatabaseImport) {
+        return { path: bunDatabaseAdapter };
+      }
+    });
+  },
+};
 
 const targets = {
   "linux-x64": "bun-linux-x64-baseline",
@@ -25,6 +37,7 @@ for (const [name, target] of Object.entries(selected ? { [selected]: targets[sel
     entrypoints: ["apps/cli/src/standalone.ts"],
     compile: { target, outfile },
     define: { VCONTEXT_VERSION_BUILD: JSON.stringify(releaseVersion) },
+    plugins: [standaloneDatabasePlugin],
     minify: false,
     sourcemap: "none",
   });

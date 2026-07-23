@@ -1,4 +1,4 @@
-import type Database from "../storage/database.js";
+import type { Database } from "../storage/database.js";
 import type { RegisteredProject } from "../storage/registry-store.js";
 
 export interface ProjectMigrationContext {

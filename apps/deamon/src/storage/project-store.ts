@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import type Database from "./database.js";
+import type { Database } from "./database.js";
 import { GitAwareStore } from "./git-aware-store.js";
 import { projectConfigPath } from "./paths.js";
 import {
@@ -84,7 +84,7 @@ interface ProjectConfig {
 const PROJECT_STORE_ACCESS = Symbol("migrated-project-store");
 
 export class ProjectStore {
-  readonly db: Database.Database;
+  readonly db: Database;
   readonly resolver: SnapshotStateResolver;
   readonly branches: ProjectBranchesStore;
   readonly remotes: ProjectRemotesStore;
@@ -94,7 +94,7 @@ export class ProjectStore {
 
   private constructor(
     readonly project: RegisteredProject,
-    database: Database.Database,
+    database: Database,
   ) {
     this.db = database;
     this.resolver = new SnapshotStateResolver(this.db);
@@ -108,7 +108,7 @@ export class ProjectStore {
 
   static fromMigratedDatabase(
     project: RegisteredProject,
-    database: Database.Database,
+    database: Database,
     access: symbol,
   ) {
     if (access !== PROJECT_STORE_ACCESS) {
@@ -581,7 +581,7 @@ export class ProjectStore {
 
 export function createMigratedProjectStore(
   project: RegisteredProject,
-  database: Database.Database,
+  database: Database,
 ) {
   return ProjectStore.fromMigratedDatabase(
     project,

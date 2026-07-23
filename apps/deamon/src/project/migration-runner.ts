@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type Database from "../storage/database.js";
+import type { Database } from "../storage/database.js";
 import { withProjectMigrationLock } from "./migration-lock.js";
 import {
   errorMessage,
