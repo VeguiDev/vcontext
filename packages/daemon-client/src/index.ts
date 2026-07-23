@@ -234,11 +234,11 @@ export async function ensureDaemon(): Promise<void> {
     }
   }
 
-  const entry = daemonEntry();
-  const child = spawn(process.execPath, [entry], {
+  const child = spawn(process.execPath, daemonCommand(), {
     detached: true,
     stdio: "ignore",
     env: process.env,
+    windowsHide: true,
   });
   child.unref();
 
@@ -254,7 +254,7 @@ export async function ensureDaemon(): Promise<void> {
 
     if (exitCode !== null && exitCode !== 0) {
       throw new DaemonClientError(
-        `Daemon exited immediately with code ${exitCode}. Check the daemon build.`,
+        `Daemon exited immediately with code ${exitCode}.`,
       );
     }
 

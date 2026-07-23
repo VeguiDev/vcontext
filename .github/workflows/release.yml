@@ -129,10 +129,7 @@ jobs:
         env:
           EXECUTABLE: ${{ matrix.executable }}
           EXPECTED_VERSION: ${{ needs.verify.outputs.version }}
-        run: |
-          test -f "$EXECUTABLE"
-          test "$("$EXECUTABLE" --version)" = "$EXPECTED_VERSION"
-          "$EXECUTABLE" --help
+        run: bun scripts/smoke-standalone.ts "$EXECUTABLE" "$EXPECTED_VERSION"
 
       - name: Upload native executable
         uses: actions/upload-artifact@v5

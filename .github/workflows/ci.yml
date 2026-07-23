@@ -48,3 +48,6 @@ jobs:
 
       - name: Build native Linux x64 executable
         run: bun scripts/build-release.ts linux-x64
+
+      - name: Smoke test embedded daemon
+        run: bun scripts/smoke-standalone.ts release/bin/vcontext-linux-x64
