@@ -41,20 +41,24 @@ const steps = [
       <div class="terminal-window" aria-label="VContext terminal example">
         <div class="terminal-window__bar">
           <div><i></i><i></i><i></i></div>
-          <span>vcontext — project setup</span>
+          <span>vcontext — status</span>
           <span>01</span>
         </div>
         <div class="terminal-window__body">
-          <p><span>$</span> vcontext init api-platform --path .</p>
-          <p class="terminal-success">✓ Project registered on branch main</p>
-          <p><span>$</span> vcontext doc add --title "Architecture" \</p>
-          <p class="terminal-indent">--content "Hono API, SQLite context store"</p>
-          <p class="terminal-success">✓ Document created · snapshot 8ef92a1</p>
-          <p><span>$</span> vcontext give-context api-platform</p>
-          <div class="terminal-output">
-            <span>project</span><strong>api-platform</strong>
-            <span>branch</span><strong>main</strong>
-            <span>context</span><strong>ready for agents</strong>
+          <p><span>$</span> vcontext status</p>
+          <div class="terminal-status">
+            <p class="terminal-status__heading"><span>vcontext /</span> <strong>status</strong></p>
+            <div class="terminal-status__pairs">
+              <span><i>│</i> project</span><strong>api-platform</strong>
+              <span><i>│</i> slug</span><strong>api-platform</strong>
+              <span><i>│</i> branch</span><strong class="terminal-status__branch">main</strong>
+              <span><i>│</i> documents</span><strong>1</strong>
+              <span><i>│</i> tasks</span><strong>0</strong>
+              <span><i>│</i> changes</span><strong>0</strong>
+              <span><i>│</i> file context</span><strong>0</strong>
+            </div>
+            <p class="terminal-status__section">Last change</p>
+            <p class="terminal-status__change"><i>│</i> Create document "Architecture"</p>
           </div>
           <p class="terminal-cursor"><span>$</span> <i></i></p>
         </div>

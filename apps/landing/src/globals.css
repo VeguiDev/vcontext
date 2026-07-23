@@ -685,28 +685,43 @@ code {
 .terminal-window__body p > span {
   color: var(--accent);
 }
-.terminal-indent,
-.terminal-success {
-  padding-left: 1.65rem;
+.terminal-status {
+  margin: 1.25rem 0 1.5rem;
 }
-.terminal-indent {
-  color: #d9d9d2;
+.terminal-status__heading {
+  margin-bottom: 0.9rem !important;
 }
-.terminal-success,
-.terminal-output span {
+.terminal-status__heading span {
+  color: #7e827b !important;
+}
+.terminal-status__heading strong,
+.terminal-status__branch,
+.terminal-status__pairs i,
+.terminal-status__change i {
+  color: var(--accent);
+}
+.terminal-status__pairs {
+  display: grid;
+  grid-template-columns: 7.4rem 1fr;
+  gap: 0.1rem 1rem;
+}
+.terminal-status__pairs span {
   color: #7e827b;
 }
-.terminal-output {
-  display: grid;
-  grid-template-columns: 5rem 1fr;
-  gap: 0.4rem 1rem;
-  margin: 1.3rem 0;
-  padding: 1rem 1.2rem;
-  border-left: 2px solid var(--accent);
-  background: rgba(255, 255, 255, 0.04);
+.terminal-status__pairs i,
+.terminal-status__change i {
+  margin-right: 0.65rem;
+  font-style: normal;
 }
-.terminal-output strong {
+.terminal-status__pairs strong {
   font-weight: 500;
+}
+.terminal-status__section {
+  margin: 1rem 0 0 !important;
+  color: var(--accent);
+}
+.terminal-status__change {
+  margin: 0 !important;
 }
 .terminal-cursor {
   display: flex;
@@ -817,7 +832,7 @@ code {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 42% center;
+  object-position: 0 0;
 }
 
 /* Pricing and footer */
