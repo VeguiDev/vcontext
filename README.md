@@ -1,256 +1,293 @@
-# vcontext
+<div align="center">
+  <img src="./apps/landing/public/vcontext-iso.webp" alt="VContext logo" width="144" />
 
-Durable context storage for AI coding agents. Store documents, tasks, change notes, and file-path descriptions that persist across agent sessions. Works with any AI agent via CLI or MCP.
+  <h1>VContext</h1>
+
+  <p><strong>Durable, versioned context for AI coding agents.</strong></p>
+
+  <p>
+    Keep architecture notes, tasks, prompts, change history, and file knowledge
+    available across agent sessions — locally, through a CLI or over MCP.
+  </p>
+
+  <p>
+    <a href="https://github.com/VeguiDev/vcontext/actions/workflows/ci.yml"><img src="https://github.com/VeguiDev/vcontext/actions/workflows/ci.yml/badge.svg" alt="CI status" /></a>
+    <a href="https://github.com/VeguiDev/vcontext/releases/latest"><img src="https://img.shields.io/github/v/release/VeguiDev/vcontext?display_name=tag" alt="Latest release" /></a>
+    <a href="https://vcontext.dev"><img src="https://img.shields.io/badge/website-vcontext.dev-54A0FF" alt="Website" /></a>
+  </p>
+
+  <p>
+    <a href="#installation">Installation</a> ·
+    <a href="#quick-start">Quick start</a> ·
+    <a href="#connect-an-ai-agent">Agent setup</a> ·
+    <a href="#development">Development</a> ·
+    <a href="#contributing">Contributing</a>
+  </p>
+</div>
+
+---
+
+AI agents are good at working with the code in front of them, but their
+project knowledge is usually temporary. VContext gives that knowledge a
+durable home.
+
+It runs locally, stores project data in SQLite, tracks immutable revisions,
+and exposes the same context through a human-friendly CLI and a
+Model Context Protocol (MCP) server.
+
+## Why VContext?
+
+- **Context that survives sessions** — save decisions, documentation, tasks,
+  prompts, change notes, and path descriptions once.
+- **Built for agents and humans** — use the interactive CLI, structured JSON,
+  or one of 48 MCP tools.
+- **Versioned by default** — inspect history, create branches and snapshots,
+  compare changes, and merge context.
+- **Local-first** — the daemon and project databases live on your machine.
+- **Agent-agnostic** — configure Codex, Claude Code, or OpenCode with one
+  command, or connect any MCP-compatible client.
+- **Automation-friendly** — stable exit codes, `--json`, `--quiet`, `--yes`,
+  and no prompts when output is redirected.
+
+## Installation
+
+Official releases are self-contained executables. Node.js, Bun, npm, and pnpm
+are not required.
+
+### macOS and Linux
+
+```sh
+curl -fsSL https://vcontext.dev/install.sh | bash
+```
+
+The installer chooses a writable directory on `PATH` or falls back to
+`~/.local/bin`. It does not invoke `sudo` or modify shell configuration.
+
+### Windows
+
+Run in PowerShell:
+
+```powershell
+irm https://vcontext.dev/install.ps1 | iex
+```
+
+VContext is installed under
+`%LOCALAPPDATA%\Programs\vcontext\bin` and added to the user `PATH`.
+
+### Install a specific version
+
+```sh
+curl -fsSL https://vcontext.dev/install.sh | bash -s -- --version v1.2.3
+```
+
+PowerShell scripts executed through a pipe accept `VCONTEXT_VERSION`,
+`VCONTEXT_INSTALL_DIR`, and `VCONTEXT_FORCE=1`.
+
+### Supported platforms
+
+| Platform | Architectures        |
+| -------- | -------------------- |
+| Linux    | x64, ARM64           |
+| macOS    | Intel, Apple Silicon |
+| Windows  | x64                  |
+
+Every release includes a `vcontext-checksums.txt` file. Download it with the
+matching artifact from [GitHub Releases](https://github.com/VeguiDev/vcontext/releases)
+to verify an archive manually.
+
+### Update
+
+```sh
+vcontext update --check
+vcontext update
+vcontext update --yes # non-interactive
+```
+
+The standalone CLI verifies checksums and the staged binary before replacing
+the current installation. Set `VCONTEXT_NO_UPDATE_CHECK=1` to disable the
+automatic daily update check.
 
 ## Quick start
 
-```bash
-# Start the daemon
-vcontext daemon start
+Move into an existing Git repository and initialize VContext:
 
-# Register a project, configure its MCP integration, and install Git hooks
+```sh
+cd my-project
 vcontext init my-project --description "My project" --path .
-
-# Give context to your AI agent
-vcontext give-context my-project
-
-# View as JSON (for programmatic use)
-vcontext give-context my-project --json
-
-# Manage documents
-vcontext doc list my-project
-vcontext doc add my-project --title "Architecture" --content "Stack: Node.js, SQLite, Hono"
-
-# Manage tasks
-vcontext task list my-project
-vcontext task add my-project --title "Add auth" --description "Implement JWT login"
-
-# Track changes
-vcontext change add my-project --note "Added rate limiting"
-
-# Describe files/directories
-vcontext file-context upsert my-project --path src/ --kind directory --description "Source code"
 ```
 
-## Agent setup
+The interactive setup will:
 
-Configure the VContext MCP server for one supported coding agent:
+1. register the project with the local daemon;
+2. connect VContext to Codex, Claude Code, or OpenCode;
+3. install reversible Git hooks when the directory is a Git repository.
 
-```bash
-# Interactive: choose Codex, Claude Code, or OpenCode and the scope
+Then start storing durable context:
+
+```sh
+# Render a compact context summary
+vcontext give-context
+
+# Record an architectural decision
+vcontext doc add \
+  --title "Architecture" \
+  --content "The API uses TypeScript, Hono, and SQLite."
+
+# Track work
+vcontext task add \
+  --title "Add authentication" \
+  --description "Implement session-based login"
+
+# Describe important paths
+vcontext file-context upsert \
+  --path src/api \
+  --kind directory \
+  --description "HTTP routes and request validation"
+
+# Record a meaningful change
+vcontext change add --note "Added rate limiting to public endpoints"
+```
+
+The daemon starts automatically when the CLI or MCP server needs it.
+
+## Connect an AI agent
+
+Run the interactive setup:
+
+```sh
 vcontext setup
+```
 
-# Project configuration that can be committed with the repository
+Or configure an agent explicitly:
+
+```sh
+# Shared, project-level configuration
 vcontext setup --agent codex --scope local
+vcontext setup --agent claude --scope local
+vcontext setup --agent opencode --scope local
 
-# User-wide configuration
-vcontext setup --agent claude --scope global
+# Private configuration available to every project
+vcontext setup --agent codex --scope global
 ```
 
-Local setup writes the agent's standard project configuration
-(`.codex/config.toml`, `.mcp.json`, or `opencode.json`) while preserving
-unrelated settings. Global setup uses the corresponding user configuration.
-The selected agent must already be installed and available on `PATH`.
+Local setup updates the agent's standard project file:
 
-`vcontext init` runs this setup as part of project registration and also
-installs the VContext Git hooks when the target path is a Git repository. In
-interactive terminals it asks for the agent and scope. For scripts, pass
-`--agent`; `--scope local` is the default:
+| Agent       | Project configuration |
+| ----------- | --------------------- |
+| Codex       | `.codex/config.toml`  |
+| Claude Code | `.mcp.json`           |
+| OpenCode    | `opencode.json`       |
 
-```bash
-vcontext init my-project --path . --agent opencode
-```
+Existing settings and JSONC comments are preserved. The selected agent must
+already be installed and available on `PATH`.
 
-When a non-interactive `init` omits `--agent`, project registration and Git
-hook setup still run, and MCP setup is skipped with an actionable warning.
+For scripts, `vcontext init --agent <agent>` defaults to local scope. A
+non-interactive `init` without `--agent` still registers the project and
+installs Git hooks, but skips MCP setup with an actionable warning.
 
-## MCP (Model Context Protocol)
+## Core concepts
 
-Use vcontext with any MCP-compatible AI agent (Claude Desktop, OpenCode, Codex, etc.).
+### Durable project context
 
-### Setup
+VContext stores five kinds of agent knowledge:
 
-Build the daemon and MCP server:
+| Entity       | Purpose                                                       |
+| ------------ | ------------------------------------------------------------- |
+| Documents    | Architecture, conventions, decisions, and long-form knowledge |
+| Tasks        | Work items with lifecycle status                              |
+| Prompts      | Project-specific reusable instructions                        |
+| Change notes | A concise record of meaningful changes                        |
+| File context | Descriptions attached to files and directories                |
 
-```bash
-pnpm install
-pnpm build
-```
+Every update creates an immutable revision. Public `record_id` values identify
+the logical entity, while revision IDs identify a specific historical state.
 
-### Claude Desktop
+### Branches, snapshots, and merges
 
-Add to your `claude_desktop_config.json`:
+Context evolves independently from source code while still following a
+Git-like workflow:
 
-```json
-{
-  "mcpServers": {
-    "vcontext": {
-      "command": "node",
-      "args": ["path/to/vcontext/apps/mcp/dist/src/index.js"]
-    }
-  }
-}
-```
+```sh
+vcontext branch create feature/auth --from main
+vcontext branch checkout feature/auth
+vcontext doc update <record-id> \
+  --content "Authentication design…" \
+  --message "Document auth flow"
 
-### OpenCode
-
-Add to your `.opencode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "vcontext": {
-      "command": "node",
-      "args": ["path/to/vcontext/apps/mcp/dist/src/index.js"]
-    }
-  }
-}
-```
-
-### Codex
-
-Add to your `.codex/config.toml`:
-
-```toml
-[mcpServers.vcontext]
-command = "node"
-args = ["path/to/vcontext/apps/mcp/dist/src/index.js"]
-```
-
-> **Note:** The MCP server auto-starts the vcontext daemon if it's not running. For best performance, start the daemon explicitly with `vcontext daemon start` before connecting.
-
-### Available MCP tools
-
-The 22 original compatibility tools below remain available. The complete
-48-tool versioned surface is summarized in the reference section below; every
-tool is prefixed with `vcontext_`:
-
-| Tool                           | Description                                                      |
-| ------------------------------ | ---------------------------------------------------------------- |
-| `vcontext_context`             | Get compact project context (omits instructions, truncates docs) |
-| `vcontext_projects`            | List all projects                                                |
-| `vcontext_migration_status`    | Inspect project schema migration state                           |
-| `vcontext_migration_list`      | List applied and pending project migrations                      |
-| `vcontext_tasks_list`          | List tasks                                                       |
-| `vcontext_tasks_add`           | Add a task                                                       |
-| `vcontext_tasks_update`        | Update a task                                                    |
-| `vcontext_tasks_delete`        | Delete a task                                                    |
-| `vcontext_documents_list`      | List documents                                                   |
-| `vcontext_documents_get`       | Get a document by ID                                             |
-| `vcontext_documents_add`       | Add a document                                                   |
-| `vcontext_documents_update`    | Update a document                                                |
-| `vcontext_documents_delete`    | Delete a document                                                |
-| `vcontext_changes_list`        | List changes                                                     |
-| `vcontext_changes_add`         | Record a change                                                  |
-| `vcontext_file_context_list`   | List file context entries                                        |
-| `vcontext_file_context_upsert` | Create or update file context                                    |
-| `vcontext_file_context_delete` | Delete file context                                              |
-| `vcontext_prompts_list`        | List prompts                                                     |
-| `vcontext_prompts_add`         | Add a prompt                                                     |
-| `vcontext_prompts_update`      | Update a prompt                                                  |
-| `vcontext_prompts_delete`      | Delete a prompt                                                  |
-
-## Daemon
-
-The vcontext daemon runs in the background and stores all data in SQLite databases under `~/.vcontext/`.
-
-```bash
-vcontext daemon start
-vcontext daemon status
-vcontext daemon stop
-```
-
-The daemon auto-starts when needed by the CLI or MCP server.
-
-## Local history, branches, and snapshots
-
-Each project's SQLite database stores immutable entity revisions. An entity's
-`record_id` is its stable logical ID; `id` identifies one immutable revision.
-Update and delete operations therefore accept `record_id`, and references such
-as `task.document_id` also contain a document `record_id`.
-
-The daemon storage API is branch- or snapshot-scoped:
-
-```ts
-const handle = await projectService.open(project.slug);
-const store = handle.store;
-const main = store.branch("main");
-const document = main.document.create({
-  title: "Architecture",
-  content: "...",
-});
-
-main.document.update(document.record_id, { content: "Revised" });
-main.document.history(document.record_id);
-
-store.snapshot(document.snapshot_id).document.find();
-store.branches.create("feature/history");
-store.merge.preview("feature/history", "main");
-```
-
-Existing per-project databases are migrated automatically into a single
-versioned snapshot on first open. The locally selected branch is stored in the
-per-project storage file `project.json`; workspace marker files under
-`.vcontext/project.json` continue to identify a project by slug and UUID.
-
-## Project migrations
-
-Every scoped project database is opened through a shared migration gate.
-Migrations are discovered from
-`apps/deamon/src/project/migrations/`, validated and ordered with semantic
-version rules, checksum-tracked in `schema_migrations`, and applied under a
-project-scoped process lock. Normal daemon, CLI, MCP, and internal store access
-is refused until all pending migrations succeed.
-
-```bash
-vcontext migration status [project-slug]
-vcontext migration list [project-slug]
-vcontext migration pending [project-slug]
-vcontext migration run [project-slug] [--to version]
-```
-
-Each command supports `--json`. Migration status and list are also available
-as read-only MCP tools; agents cannot execute migrations.
-
-Backup-required migrations use SQLite's backup API and retain backups under the
-project's `migration-backups/` directory. Critical scoped-database changes and
-migration tracking commit in one SQLite transaction. A migration that also
-changes the global registry database cannot be atomic across both independent
-SQLite connections; global changes must therefore be idempotent and
-recoverable, with the scoped database remaining authoritative.
-
-## Versioned CLI and MCP reference
-
-The CLI exposes project status, full CRUD/history for documents, prompts,
-tasks, changes and file context, plus branches, snapshots, log, diff and
-three-way merge:
-
-```bash
-vcontext status
-vcontext doc add --title Architecture --content "Initial"
-vcontext branch create feature --from main
-vcontext branch checkout feature
-vcontext doc update <record-id> --content "Feature version" --message "Revise architecture"
 vcontext log --limit 20
-vcontext diff --from branch:main --to branch:feature
-vcontext merge preview feature --target main
-vcontext merge apply feature --target main --strategy source
+vcontext diff --from branch:main --to branch:feature/auth
+vcontext merge preview feature/auth --target main
+vcontext merge apply feature/auth --target main --strategy source
 ```
 
-Human-readable output is the default. Scripts must pass `--json`;
-`--quiet` suppresses successful stdout and is mutually exclusive
-with `--json`. Public entity IDs are stable `record_id`
-UUIDs; immutable revision `id` values are not accepted as record IDs.
+Use snapshots for immutable reads and branches for writes. Existing databases
+are migrated automatically when opened.
 
-MCP exposes exactly 48 backwards-compatible plural tools. Canonical inputs are
-`project_slug`, `record_id` and
-`snapshot_id`; legacy `slug`, `documentId`,
-`taskId` and related fields remain accepted when they do not
-contradict canonical values. Reads accept either `branch` or
-`snapshot_id`. Writes accept `branch` and
-`message` and reject detached snapshots.
+### Git hooks
 
-The read-only MCP resources are:
+VContext can observe checkout, commit, merge, rewrite, and push events without
+blocking Git:
+
+```sh
+vcontext git hooks install
+vcontext git hooks status
+vcontext git hooks repair
+vcontext git hooks uninstall
+```
+
+Installation is reversible. If a repository already has a custom
+`core.hooksPath`, VContext dispatches to it and restores it on uninstall.
+
+## CLI reference
+
+Run `vcontext --help` or `vcontext <command> --help` for the complete,
+version-matched reference.
+
+| Area           | Commands                                                               |
+| -------------- | ---------------------------------------------------------------------- |
+| Setup          | `setup`, `init`, `projects`, `status`, `give-context`                  |
+| Context        | `doc`, `prompt`, `task`, `change`, `file-context`                      |
+| Versioning     | `branch`, `snapshot`, `log`, `diff`, `merge`, `checkout`               |
+| Cloud and sync | `auth`, `identity`, `remote`, `clone`, `fetch`, `pull`, `push`, `sync` |
+| System         | `daemon`, `git hooks`, `migration`, `mcp`, `update`                    |
+
+### Output and automation
+
+Human-readable output is the default:
+
+```sh
+vcontext status
+```
+
+For scripts:
+
+```sh
+vcontext status --json
+vcontext projects --quiet
+vcontext update --yes
+```
+
+- `--json` writes machine-readable success output.
+- `--quiet` suppresses successful output and cannot be combined with `--json`.
+- Errors go to stderr; JSON errors use an `{ "error": { ... } }` envelope.
+- `--yes` accepts confirmations in non-interactive environments.
+- `--no-color` and `NO_COLOR` disable styling.
+- `--verbose` or `VCONTEXT_DEBUG=1` enables diagnostics.
+
+## MCP
+
+The MCP server runs over stdio with:
+
+```sh
+vcontext mcp
+```
+
+It exposes 48 backwards-compatible tools for project discovery, context,
+documents, prompts, tasks, change notes, file context, branches, snapshots,
+diffs, merges, and migration inspection. Tool names are prefixed with
+`vcontext_`.
+
+Read-only MCP resources include:
 
 - `vcontext://projects`
 - `vcontext://project/{slug}/status`
@@ -258,89 +295,124 @@ The read-only MCP resources are:
 - `vcontext://project/{slug}/snapshot/{snapshotId}`
 - `vcontext://project/{slug}/document/{recordId}`
 
+Canonical MCP inputs use `project_slug`, `record_id`, and `snapshot_id`.
+Reads can target a branch or snapshot; writes target branches and may include
+a revision message.
+
+## Data and migrations
+
+The daemon stores its registry and project databases under `~/.vcontext/`.
+Each project database is protected by a checksum-tracked migration gate before
+normal CLI, MCP, or internal access is allowed.
+
+```sh
+vcontext migration status
+vcontext migration list
+vcontext migration pending
+vcontext migration run --to <version>
+```
+
+Backup-required migrations retain backups inside the project's
+`migration-backups/` directory. Migration inspection is available through
+read-only MCP tools; agents cannot execute migrations through MCP.
+
 ## Development
 
-```bash
+### Prerequisites
+
+- Node.js 22
+- pnpm 9
+- Bun 1.3.x for native release builds and standalone smoke tests
+
+Clone and build the monorepo:
+
+```sh
+git clone https://github.com/VeguiDev/vcontext.git
+cd vcontext
 pnpm install
 pnpm build
 ```
 
-Run the development CLI from the repository with:
+Run the development CLI:
 
-```bash
+```sh
 pnpm vcontext-dev --help
 ```
 
-To make `vcontext-dev` available from any working directory, create a
-one-time global link:
+For a global development command:
 
-```bash
+```sh
 pnpm vcontext-dev:link
 vcontext-dev --help
 ```
 
-The launcher incrementally rebuilds the CLI, daemon, and their workspace
-dependencies before each invocation. It keeps development state separate in
-`~/.vcontext-dev` and uses a separate operating-system keyring service. Set
-`VCONTEXT_DEV_HOME` to choose another development data directory. If the
-daemon source changes while the development daemon is running, run
-`vcontext-dev daemon stop`; the next command starts the rebuilt daemon.
+Development state is isolated under `~/.vcontext-dev`. Override it with
+`VCONTEXT_DEV_HOME`. If daemon source changes while the development daemon is
+running, stop it with `vcontext-dev daemon stop`; the next command starts the
+rebuilt daemon.
 
-Remove the global development link with:
-
-```bash
-pnpm vcontext-dev:unlink
-```
-
-## Project structure
-
-- `apps/cli/` — CLI client (`vcontext` command)
-- `apps/deamon/` — Background daemon with HTTP API over Unix socket
-- `apps/mcp/` — MCP server for agent integration
-- `packages/daemon-client/` — Shared HTTP client used by CLI and MCP
-
-## CLI output and automation
-
-The CLI uses human-readable output by default. Use `--json` for machine-readable success output and `--quiet` to suppress successful output. Errors are written to stderr; with `--json`, errors use an `{ "error": { "code", "message", "hint" } }` envelope.
-
-Global options include `--help`, `--version`, `--verbose`, `--quiet`, `--no-color`, `--yes`, and `--json`. Colors are automatically disabled for redirected output and whenever `NO_COLOR` is set. `VCONTEXT_DEBUG=1` is equivalent to verbose diagnostics.
-
-Commands that require confirmation can run non-interactively with `--yes`. Without a TTY, required confirmations fail with an actionable error instead of waiting for input.
-
-## Standalone installation
-
-Released binaries include their runtime; Node.js, npm, pnpm, and Bun are not required.
+### Verification
 
 ```sh
-curl -fsSL https://vcontext.dev/install.sh | bash
-curl -fsSL https://vcontext.dev/install.sh | bash -s -- --version v1.2.3
+pnpm lint
+pnpm check-types
+pnpm test
 ```
 
-Windows PowerShell:
+### Repository layout
 
-```powershell
-irm https://vcontext.dev/install.ps1 | iex
-# Piped scripts accept VCONTEXT_VERSION, VCONTEXT_INSTALL_DIR and VCONTEXT_FORCE=1.
+```text
+apps/
+  cli/                  CLI, MCP entrypoint, and standalone runtime
+  deamon/               Local daemon and HTTP API
+  landing/              vcontext.dev website
+packages/
+  daemon-client/        Shared daemon client
+  vcontext-core/        Runtime primitives
+  vcontext-mcp/         MCP schemas, tools, and API
+  versioning-contract/  Shared versioning contracts
+tools/
+  vcontext-dev/         Incremental development launcher
 ```
 
-Unix installs to a writable PATH directory when possible, otherwise `~/.local/bin`; it never changes shell configuration or invokes sudo. Windows installs to `%LOCALAPPDATA%\Programs\vcontext\bin` and adds it to the user PATH. Use `--install-dir` / `-InstallDir` and `--force` / `-Force` to override those defaults.
+## Contributing
 
-Supported releases: Linux x64 and ARM64, macOS Intel and Apple Silicon, and Windows x64. To verify an archive manually, download its matching `vcontext-checksums.txt` from the same GitHub Release and run `sha256sum`, `shasum -a 256`, or `Get-FileHash -Algorithm SHA256`.
+Issues and pull requests are welcome.
 
-The official standalone CLI can check and install stable releases directly:
+1. Search [existing issues](https://github.com/VeguiDev/vcontext/issues)
+   before opening a new one.
+2. Fork the repository and create a focused branch.
+3. Add or update tests for behavior changes.
+4. Run `pnpm lint`, `pnpm check-types`, and `pnpm test`.
+5. Open a pull request describing the problem, approach, and verification.
 
-```sh
-vcontext update --check
-vcontext update
-vcontext update --yes # Non-interactive confirmation
-```
+For large changes, open an issue first so the design can be discussed before
+implementation.
 
-Interactive standalone commands check for updates at most once per day and show a notice when a newer release is available. Set `VCONTEXT_NO_UPDATE_CHECK=1` to disable that background check. The checker stays silent for redirected output, `--json`, `--quiet`, MCP, daemon, and development commands.
+## Releases
 
-Updates are downloaded from the project's GitHub Releases, verified against `vcontext-checksums.txt`, staged, and version-checked before replacement, with rollback protection. Unix replacement is atomic; on Windows it finishes after the running process exits and reports its result on the next interactive command. `vcontext-dev` and other Node-based installations are never self-modified; re-run the official installer when self-update is unavailable.
+Pushes to `master` run CI and the release workflow. Published versions use the
+package semantic version plus the GitHub Actions run number, for example
+`0.1.1+123`, and include native artifacts for all supported platforms.
 
-To uninstall, remove `~/.local/bin/vcontext` (or the selected Unix install path), or `%LOCALAPPDATA%\Programs\vcontext\bin\vcontext.exe`; user configuration in `~/.vcontext` is intentionally retained.
+Manual release workflows build by default; publishing must be explicitly
+enabled. macOS binaries remain unsigned until the optional signing and
+notarization secrets are configured.
 
-### Creating a release
+## Uninstall
 
-Set `apps/cli/package.json` to the intended semantic base version and push to `main`. The release workflow validates lint, types, and tests, then publishes all five native artifacts as `<package-version>+<github.run_number>` (for example, `0.1.1+123`) under the automatically created tag `v0.1.1+123`. Each successful push becomes the latest release so the installers can use GitHub's stable `/releases/latest/download/` URLs. A manual `workflow_dispatch` only builds by default; enable its `publish` input to create a release. macOS binaries are unsigned until the optional Apple signing and notarization secrets are configured, so Gatekeeper may show a warning.
+Remove the installed executable:
+
+- macOS/Linux: `~/.local/bin/vcontext` or the custom installation path.
+- Windows: `%LOCALAPPDATA%\Programs\vcontext\bin\vcontext.exe`.
+
+User data under `~/.vcontext/` is intentionally retained. Remove it separately
+only if you also want to delete all local VContext projects and configuration.
+
+---
+
+<div align="center">
+  <a href="https://vcontext.dev">Website</a> ·
+  <a href="https://github.com/VeguiDev/vcontext/releases">Releases</a> ·
+  <a href="https://github.com/VeguiDev/vcontext/issues">Issues</a>
+</div>
