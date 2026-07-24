@@ -260,7 +260,8 @@ describe("remote and sync commands", () => {
       isTTY: true,
       confirmRemoteMove: async () => true,
       resolveProjectSlug: async () => "demo",
-      requestValue: async (_method, _path, body) => {
+      requestValue: async (_method, requestPath, body) => {
+        if (requestPath.includes("push-readiness")) return { ready: true };
         bodies.push(body);
         return bodies.length === 1
           ? { code: "REMOTE_MOVED", location: "https://cloud.example/new/demo" }
@@ -270,6 +271,30 @@ describe("remote and sync commands", () => {
     assert.deepEqual(bodies, [
       { remote: "origin", branch: "main", force: false, yes: false },
       { remote: "origin", branch: "main", force: false, yes: true },
+    ]);
+  });
+
+  it("stops push before transfer when identity is incomplete", async () => {
+    const requests: string[] = [];
+    await assert.rejects(
+      pushCommand(["upstream", "--quiet"], {
+        resolveProjectSlug: async () => "demo",
+        requestValue: async (_method, requestPath) => {
+          requests.push(requestPath);
+          return {
+            ready: false,
+            missing: ["git.user.email", "vcontext.email"],
+            hint: "configure identities",
+          };
+        },
+      }),
+      (error) =>
+        error instanceof DaemonClientError &&
+        error.code === "IDENTITY_REQUIRED" &&
+        error.hint === "configure identities",
+    );
+    assert.deepEqual(requests, [
+      "/projects/demo/sync/push-readiness?remote=upstream",
     ]);
   });
 

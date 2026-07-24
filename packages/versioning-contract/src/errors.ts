@@ -23,6 +23,7 @@ export const SYNC_ERROR_CODES = [
   "CONTINUATION_INVALID",
   "CONTINUATION_EXPIRED",
   "REMOTE_MOVED",
+  "IDENTITY_REQUIRED",
   "RATE_LIMITED",
   "INTERNAL_ERROR",
 ] as const;
@@ -38,7 +39,9 @@ export const SyncErrorSchema = z
     retryable: z.boolean().optional(),
   })
   .strict();
-export const SyncErrorResponseSchema = z.object({ error: SyncErrorSchema }).strict();
+export const SyncErrorResponseSchema = z
+  .object({ error: SyncErrorSchema })
+  .strict();
 export type SyncError = z.infer<typeof SyncErrorSchema>;
 export type SyncErrorResponse = z.infer<typeof SyncErrorResponseSchema>;
 

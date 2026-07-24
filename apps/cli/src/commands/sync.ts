@@ -148,6 +148,14 @@ async function projectSyncCommand(
     input,
     `Usage: vcontext ${action} [remote] [branch] [--project slug] [--json|--quiet]`,
   );
+  if (action === "push") {
+    const query = remote ? `?remote=${encodeURIComponent(remote)}` : "";
+    const readiness = await dependencies.requestValue(
+      "GET",
+      `/projects/${encodeURIComponent(slug)}/sync/push-readiness${query}`,
+    );
+    assertPushReady(readiness);
+  }
   const value = await requestWithMove(
     dependencies,
     "POST",
@@ -162,6 +170,38 @@ async function projectSyncCommand(
       `${action[0]!.toUpperCase()}${action.slice(1)} complete`,
       result,
     ),
+  );
+}
+
+function assertPushReady(value: unknown): void {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("ready" in value) ||
+    typeof value.ready !== "boolean"
+  ) {
+    throw new DaemonClientError(
+      "The daemon returned an invalid push readiness response.",
+    );
+  }
+  if (value.ready) return;
+  const record = value as Record<string, unknown>;
+  const missing = Array.isArray(record.missing)
+    ? record.missing.filter((item): item is string => typeof item === "string")
+    : [];
+  const hint =
+    typeof record.hint === "string" && record.hint.trim()
+      ? record.hint
+      : "Configure Git and VContext user name and email before pushing.";
+  throw new DaemonClientError(
+    `Push requires Git and VContext user name and email${missing.length ? `. Missing: ${missing.join(", ")}` : "."}`,
+    2,
+    undefined,
+    {
+      code: "IDENTITY_REQUIRED",
+      hint,
+      details: record,
+    },
   );
 }
 
