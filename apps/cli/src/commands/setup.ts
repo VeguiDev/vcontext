@@ -34,9 +34,21 @@ export async function setupCommand(
 
   if (!agent && ui.isTTY) {
     agent = await ui.select<McpAgent>("Which agent do you use?", [
-      { value: "codex", label: "Codex" },
-      { value: "claude", label: "Claude Code" },
-      { value: "opencode", label: "OpenCode" },
+      {
+        value: "codex",
+        label: "Codex",
+        hint: "OpenAI coding agent",
+      },
+      {
+        value: "claude",
+        label: "Claude Code",
+        hint: "Anthropic coding agent",
+      },
+      {
+        value: "opencode",
+        label: "OpenCode",
+        hint: "Open-source coding agent",
+      },
     ]);
   }
   if (!agent && options.allowNonInteractiveSkip) {
@@ -53,8 +65,16 @@ export async function setupCommand(
 
   if (!scope && ui.isTTY) {
     scope = await ui.select<McpScope>("Where should VContext be configured?", [
-      { value: "local", label: "This project (shared)" },
-      { value: "global", label: "All projects for this user" },
+      {
+        value: "local",
+        label: "This project",
+        hint: "Shared configuration that can be committed",
+      },
+      {
+        value: "global",
+        label: "All projects",
+        hint: "Private configuration for this user",
+      },
     ]);
   }
   scope ??= options.defaultScope;

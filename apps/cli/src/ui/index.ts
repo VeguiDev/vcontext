@@ -1,8 +1,14 @@
-import { createInterface } from "node:readline/promises";
 import { stdin, stdout, stderr } from "node:process";
+import { Writable, type Readable } from "node:stream";
 import boxen from "boxen";
 import pc from "picocolors";
 import ora, { type Ora } from "ora";
+import { DaemonClientError } from "@repo/daemon-client";
+import {
+  ClackPromptAdapter,
+  PROMPT_CANCELLED,
+  type CliPromptAdapter,
+} from "./prompts.js";
 
 export interface UiWriter {
   isTTY?: boolean;
@@ -17,6 +23,7 @@ export interface UiReader {
 export interface UiSelectOption<T extends string> {
   value: T;
   label: string;
+  hint?: string;
 }
 
 export interface CliUiEnvironment {
@@ -27,6 +34,7 @@ export interface CliUiEnvironment {
   color?: boolean;
   columns?: number;
   commandName?: string;
+  prompts?: CliPromptAdapter;
 }
 
 export interface CliOptions {
@@ -103,6 +111,7 @@ export class CliUi {
   private readonly input: UiReader;
   private readonly output: UiWriter;
   private readonly errorOutput: UiWriter;
+  private readonly prompts: CliPromptAdapter;
 
   constructor(options: CliOptions, environment: CliUiEnvironment = {}) {
     this.options = options;
@@ -124,6 +133,14 @@ export class CliUi {
       40,
       environment.columns ?? this.output.columns ?? 80,
     );
+    this.prompts =
+      environment.prompts ??
+      new ClackPromptAdapter(
+        this.input as Readable,
+        this.color
+          ? (this.output as unknown as Writable)
+          : new SgrStrippingWriter(this.output, this.columns),
+      );
   }
 
   get rich(): boolean {
@@ -206,24 +223,11 @@ export class CliUi {
 
   async confirm(question: string, defaultValue = false): Promise<boolean> {
     if (!this.isTTY || this.options.json || this.options.quiet) return false;
-    const reader = createInterface({
-      input: this.input as typeof stdin,
-      output: this.output as typeof stdout,
+    const result = await this.prompts.confirm({
+      message: question,
+      initialValue: defaultValue,
     });
-    try {
-      const suffix = defaultValue ? " [Y/n] " : " [y/N] ";
-      while (true) {
-        const answer = (await reader.question(`${question}${suffix}`))
-          .trim()
-          .toLowerCase();
-        if (!answer) return defaultValue;
-        if (["y", "yes"].includes(answer)) return true;
-        if (["n", "no"].includes(answer)) return false;
-        this.warn("Please answer yes or no.");
-      }
-    } finally {
-      reader.close();
-    }
+    return this.promptResult(result);
   }
 
   async select<T extends string>(
@@ -232,25 +236,11 @@ export class CliUi {
   ): Promise<T> {
     if (!this.isTTY || this.options.json || this.options.quiet)
       throw new Error("Interactive selection requires a terminal");
-    const reader = createInterface({
-      input: this.input as typeof stdin,
-      output: this.output as typeof stdout,
+    const result = await this.prompts.select<T>({
+      message: question,
+      options,
     });
-    try {
-      this.line(question);
-      options.forEach((option, index) =>
-        this.line(`  ${index + 1}) ${option.label}`),
-      );
-      while (true) {
-        const answer = (await reader.question("> ")).trim();
-        const index = Number.parseInt(answer, 10) - 1;
-        if (Number.isInteger(index) && options[index])
-          return options[index].value;
-        this.warn(`Choose a number from 1 to ${options.length}.`);
-      }
-    } finally {
-      reader.close();
-    }
+    return this.promptResult(result);
   }
 
   spinner(message: string): UiSpinner {
@@ -412,6 +402,14 @@ export class CliUi {
       this.command(command),
     );
   }
+
+  private promptResult<T>(result: T | typeof PROMPT_CANCELLED): T {
+    if (result === PROMPT_CANCELLED)
+      throw new DaemonClientError("Operation cancelled.", 130, undefined, {
+        code: "OPERATION_CANCELLED",
+      });
+    return result as T;
+  }
 }
 
 export class UiSpinner {
@@ -444,6 +442,33 @@ export class UiSpinner {
 
   fail(message = this.message): void {
     if (this.instance) this.instance.fail(message);
+  }
+}
+
+class SgrStrippingWriter extends Writable {
+  readonly isTTY: boolean;
+  readonly columns: number;
+
+  constructor(
+    private readonly target: UiWriter,
+    columns: number,
+  ) {
+    super();
+    this.isTTY = Boolean(target.isTTY);
+    this.columns = columns;
+  }
+
+  override _write(
+    chunk: string | Buffer,
+    _encoding: BufferEncoding,
+    callback: (error?: Error | null) => void,
+  ): void {
+    try {
+      this.target.write(chunk.toString().replace(/\u001B\[[0-9;]*m/g, ""));
+      callback();
+    } catch (error) {
+      callback(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 }
 

@@ -1,5 +1,3 @@
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
 import path from "node:path";
 import { DaemonClientError } from "@repo/daemon-client";
 import { getUi } from "../ui/index.js";
@@ -181,7 +179,7 @@ async function requestWithMove(
   );
   if (!isRemoteMoved(result)) return result;
 
-  const tty = dependencies.isTTY ?? Boolean(stdin.isTTY && stdout.isTTY);
+  const tty = dependencies.isTTY ?? getUi().isTTY;
   let accepted = yes;
   if (!accepted && tty && !output.json && !output.quiet) {
     accepted = await (dependencies.confirmRemoteMove ?? confirmRemoteMove)(
@@ -229,15 +227,9 @@ async function requestWithMove(
 }
 
 async function confirmRemoteMove(from: string, to: string): Promise<boolean> {
-  const reader = createInterface({ input: stdin, output: stdout });
-  try {
-    const answer = await reader.question(
-      `Remote moved from ${from} to ${to}. Update the remote? [y/N] `,
-    );
-    return /^(y|yes)$/i.test(answer.trim());
-  } finally {
-    reader.close();
-  }
+  return getUi().confirm(
+    `Remote moved from ${from} to ${to}. Update the remote?`,
+  );
 }
 
 function isRemoteMoved(value: unknown): value is {

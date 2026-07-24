@@ -3,6 +3,7 @@ import test from "node:test";
 import { DaemonClientError } from "@repo/daemon-client";
 import { configureUi, parseGlobalOptions } from "../src/ui/index.js";
 import { errorData } from "../src/ui/errors.js";
+import { PROMPT_CANCELLED, type CliPromptAdapter } from "../src/ui/prompts.js";
 
 function captureUi(
   options: {
@@ -268,4 +269,91 @@ test("unexpected errors have actionable diagnostics", () => {
   assert.equal(value.code, "UNEXPECTED_ERROR");
   assert.match(value.message, /Unexpected error/);
   assert.match(value.hint ?? "", /--verbose/);
+});
+
+test("interactive prompts delegate typed selections and confirmation defaults", async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  const prompts: CliPromptAdapter = {
+    async confirm(options) {
+      calls.push({ kind: "confirm", ...options });
+      return true;
+    },
+    async select<T extends string>(options: {
+      message: string;
+      options: readonly { value: T; label: string; hint?: string }[];
+    }) {
+      calls.push({ kind: "select", ...options });
+      return options.options[1]!.value;
+    },
+  };
+  const output = { isTTY: true, write() {} };
+  const ui = configureUi(
+    { noColor: true },
+    {
+      input: { isTTY: true },
+      output,
+      error: output,
+      isTTY: true,
+      prompts,
+    },
+  );
+
+  assert.equal(await ui.confirm("Continue?", false), true);
+  assert.equal(
+    await ui.select("Choose", [
+      { value: "first", label: "First" },
+      { value: "second", label: "Second", hint: "Recommended" },
+    ]),
+    "second",
+  );
+  assert.deepEqual(calls, [
+    {
+      kind: "confirm",
+      message: "Continue?",
+      initialValue: false,
+    },
+    {
+      kind: "select",
+      message: "Choose",
+      options: [
+        { value: "first", label: "First" },
+        { value: "second", label: "Second", hint: "Recommended" },
+      ],
+    },
+  ]);
+});
+
+test("Ctrl+C from any prompt becomes a clean exit-code 130 error", async () => {
+  const prompts: CliPromptAdapter = {
+    async confirm() {
+      return PROMPT_CANCELLED;
+    },
+    async select() {
+      return PROMPT_CANCELLED;
+    },
+  };
+  const output = { isTTY: true, write() {} };
+  const ui = configureUi(
+    { noColor: true },
+    {
+      input: { isTTY: true },
+      output,
+      error: output,
+      isTTY: true,
+      prompts,
+    },
+  );
+
+  await assert.rejects(
+    ui.confirm("Continue?"),
+    (error: unknown) =>
+      error instanceof DaemonClientError &&
+      error.exitCode === 130 &&
+      error.message === "Operation cancelled.",
+  );
+  await assert.rejects(
+    ui.select("Choose", [{ value: "only", label: "Only" }]),
+    (error: unknown) =>
+      error instanceof DaemonClientError && error.exitCode === 130,
+  );
 });
