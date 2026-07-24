@@ -21,6 +21,7 @@
     "@repo/vcontext-mcp": "workspace:^",
     "@vcontext/versioning-contract": "workspace:0.1.0",
     "boxen": "^8.0.1",
+    "jsonc-parser": "^3.3.1",
     "ora": "^9.4.1",
     "picocolors": "^1.1.1",
     "semver": "7.8.0"

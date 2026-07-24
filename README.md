@@ -8,7 +8,7 @@ Durable context storage for AI coding agents. Store documents, tasks, change not
 # Start the daemon
 vcontext daemon start
 
-# Create a project
+# Register a project, configure its MCP integration, and install Git hooks
 vcontext init my-project --description "My project" --path .
 
 # Give context to your AI agent
@@ -31,6 +31,38 @@ vcontext change add my-project --note "Added rate limiting"
 # Describe files/directories
 vcontext file-context upsert my-project --path src/ --kind directory --description "Source code"
 ```
+
+## Agent setup
+
+Configure the VContext MCP server for one supported coding agent:
+
+```bash
+# Interactive: choose Codex, Claude Code, or OpenCode and the scope
+vcontext setup
+
+# Project configuration that can be committed with the repository
+vcontext setup --agent codex --scope local
+
+# User-wide configuration
+vcontext setup --agent claude --scope global
+```
+
+Local setup writes the agent's standard project configuration
+(`.codex/config.toml`, `.mcp.json`, or `opencode.json`) while preserving
+unrelated settings. Global setup uses the corresponding user configuration.
+The selected agent must already be installed and available on `PATH`.
+
+`vcontext init` runs this setup as part of project registration and also
+installs the VContext Git hooks when the target path is a Git repository. In
+interactive terminals it asks for the agent and scope. For scripts, pass
+`--agent`; `--scope local` is the default:
+
+```bash
+vcontext init my-project --path . --agent opencode
+```
+
+When a non-interactive `init` omits `--agent`, project registration and Git
+hook setup still run, and MCP setup is skipped with an actionable warning.
 
 ## MCP (Model Context Protocol)
 

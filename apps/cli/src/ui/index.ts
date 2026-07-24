@@ -14,6 +14,11 @@ export interface UiReader {
   isTTY?: boolean;
 }
 
+export interface UiSelectOption<T extends string> {
+  value: T;
+  label: string;
+}
+
 export interface CliUiEnvironment {
   input?: UiReader;
   output?: UiWriter;
@@ -215,6 +220,33 @@ export class CliUi {
         if (["y", "yes"].includes(answer)) return true;
         if (["n", "no"].includes(answer)) return false;
         this.warn("Please answer yes or no.");
+      }
+    } finally {
+      reader.close();
+    }
+  }
+
+  async select<T extends string>(
+    question: string,
+    options: readonly UiSelectOption<T>[],
+  ): Promise<T> {
+    if (!this.isTTY || this.options.json || this.options.quiet)
+      throw new Error("Interactive selection requires a terminal");
+    const reader = createInterface({
+      input: this.input as typeof stdin,
+      output: this.output as typeof stdout,
+    });
+    try {
+      this.line(question);
+      options.forEach((option, index) =>
+        this.line(`  ${index + 1}) ${option.label}`),
+      );
+      while (true) {
+        const answer = (await reader.question("> ")).trim();
+        const index = Number.parseInt(answer, 10) - 1;
+        if (Number.isInteger(index) && options[index])
+          return options[index].value;
+        this.warn(`Choose a number from 1 to ${options.length}.`);
       }
     } finally {
       reader.close();

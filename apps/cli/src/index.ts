@@ -36,6 +36,7 @@ import {
   pushCommand,
 } from "./commands/sync.js";
 import { updateCommand } from "./commands/update.js";
+import { setupCommand } from "./commands/setup.js";
 import { configureUi, getUi, parseGlobalOptions } from "./ui/index.js";
 import { errorData } from "./ui/errors.js";
 import {
@@ -106,6 +107,7 @@ async function main(input: string[]) {
     pull: (args) => pullCommand(args, { requestValue, resolveProjectSlug }),
     push: (args) => pushCommand(args, { requestValue, resolveProjectSlug }),
     daemon,
+    setup: setup,
     init,
     projects: projectsCommand,
     "give-context": giveContext,
@@ -689,13 +691,24 @@ async function init(input: string[]) {
   const name = collectName(input);
   const description = takeOption(input, "--description");
   const localPath = path.resolve(takeOption(input, "--path") ?? process.cwd());
+  const setupInput: string[] = [];
+  const agent = takeOption(input, "--agent");
+  const scope = takeOption(input, "--scope");
+  if (agent) setupInput.push("--agent", agent);
+  if (scope) setupInput.push("--scope", scope);
+  if (input.length)
+    throw new DaemonClientError(
+      "Usage: vcontext init <project name> [--remote namespace/slug] [--host url] [--description text] [--path path] [--agent codex|claude|opencode] [--scope local|global]",
+      2,
+    );
 
   if (!name) {
     throw new DaemonClientError(
-      "Usage: vcontext init <project name> [--remote namespace/slug] [--host url] [--description text] [--path path]",
+      "Usage: vcontext init <project name> [--remote namespace/slug] [--host url] [--description text] [--path path] [--agent codex|claude|opencode] [--scope local|global]",
     );
   }
 
+  let initialized: Record<string, unknown>;
   if (remoteProject) {
     if (
       !/^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(
@@ -707,46 +720,100 @@ async function init(input: string[]) {
       project: remoteProject,
       remote_url: new URL(`/${remoteProject}`, cloudHost).toString(),
       path: localPath,
-    })) as { marker?: unknown };
+    })) as Record<string, unknown> & { marker?: unknown };
     writeProjectMarker(
       localPath,
       linked.marker as Parameters<typeof writeProjectMarker>[1],
     );
-    emit(linked, output, (value, ui) =>
-      renderProjectInit(value, ui, {
-        path: localPath,
-        remote: remoteProject,
-      }),
-    );
-    return;
+    initialized = linked;
+  } else {
+    const remote = gitRemoteUrl(localPath);
+    const response = await request("POST", "/projects", {
+      name,
+      description,
+      paths: [
+        {
+          type: "local",
+          path: localPath,
+          label: "workspace",
+        },
+        ...(remote
+          ? [
+              {
+                type: "remote",
+                path: remote,
+                label: "git:origin",
+              },
+            ]
+          : []),
+      ],
+    });
+    initialized = parseJson<Record<string, unknown>>(response);
   }
 
-  const remote = gitRemoteUrl(localPath);
-  const response = await request("POST", "/projects", {
-    name,
-    description,
-    paths: [
-      {
-        type: "local",
-        path: localPath,
-        label: "workspace",
-      },
-      ...(remote
-        ? [
-            {
-              type: "remote",
-              path: remote,
-              label: "git:origin",
-            },
-          ]
-        : []),
-    ],
+  const hooks = ensureProjectHooks(localPath);
+  const mcp = await setupCommand(setupInput, {
+    cwd: localPath,
+    defaultScope: "local",
+    allowNonInteractiveSkip: true,
   });
-  const project = parseJson<{ slug: string; uuid: string }>(response);
+  const result = { ...initialized, setup: mcp, hooks };
+  emit(result, output, (value, ui) => {
+    renderProjectInit(value, ui, {
+      path: localPath,
+      ...(remoteProject ? { remote: remoteProject } : {}),
+    });
+    if (hooks === null)
+      ui.warn(
+        "Git hooks were skipped because the path is not a Git repository.",
+      );
+    else
+      ui.success(
+        hooks.healthy ? "Git hooks ready" : "Git hooks require attention",
+      );
+    if (mcp)
+      ui.success(
+        ui.qualify(`${mcp.agent} MCP ready`, `${mcp.scope} · ${mcp.path}`),
+      );
+  });
+}
 
-  emit(project, output, (value, ui) =>
-    renderProjectInit(value, ui, { path: localPath }),
+async function setup(input: string[]) {
+  const output = outputOptions(input);
+  const result = await setupCommand(input);
+  if (!result) return;
+  emit(result, output, (value, ui) =>
+    renderObject(value, ui, "MCP setup complete"),
   );
+}
+
+function ensureProjectHooks(cwd: string) {
+  let manager: GitHooksManager;
+  try {
+    manager = new GitHooksManager(cwd);
+  } catch {
+    return null;
+  }
+  const status = manager.status() as {
+    installed: boolean;
+    healthy: boolean;
+    problems?: string[];
+  };
+  if (!status.installed) return manager.install() as typeof status;
+  if (status.healthy) return status;
+  try {
+    return manager.repair() as typeof status;
+  } catch (error) {
+    throw new DaemonClientError(
+      `Project registered, but Git hooks could not be repaired: ${error instanceof Error ? error.message : String(error)}`,
+      1,
+      undefined,
+      {
+        code: "GIT_HOOKS_UNHEALTHY",
+        hint: "Inspect with `vcontext git hooks status`; if owned hook files were changed, uninstall and reinstall them explicitly.",
+      },
+    );
+  }
 }
 
 async function gitCommand(input: string[]) {
@@ -1096,7 +1163,11 @@ function usage(command?: string) {
     {
       title: "Setup",
       commands: [
-        ["init <name> [--path path]", "Register a local project"],
+        [
+          "setup [--agent name] [--scope local|global]",
+          "Configure the VContext MCP server",
+        ],
+        ["init <name> [--path path]", "Register and configure a project"],
         ["projects", "List registered projects"],
         ["status [project]", "Show project status"],
         ["give-context [project]", "Render durable agent context"],
