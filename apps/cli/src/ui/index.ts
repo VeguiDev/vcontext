@@ -433,7 +433,11 @@ export class UiSpinner {
   }
 
   succeed(message = this.message): void {
-    if (this.instance) this.instance.succeed(message);
+    if (this.instance)
+      this.instance.stopAndPersist({
+        symbol: this.ui.green("✓"),
+        text: message,
+      });
   }
 
   warn(message = this.message): void {

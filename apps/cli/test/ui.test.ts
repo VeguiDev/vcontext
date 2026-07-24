@@ -23,6 +23,9 @@ function captureUi(
     write(chunk: string) {
       target.push(chunk);
     },
+    cursorTo() {},
+    moveCursor() {},
+    clearLine() {},
   });
   const ui = configureUi(
     {
@@ -77,6 +80,15 @@ test("rich output uses semantic markers", () => {
     capture.output(),
     "✓ Context saved\n│ Snapshot ready\n⚠ Remote moved\n",
   );
+});
+
+test("completed spinners use the VContext success symbol", () => {
+  const capture = captureUi();
+  const spinner = capture.ui.spinner("Checking for updates");
+  spinner.start();
+  spinner.succeed();
+  assert.match(capture.output(), /✓ Checking for updates/);
+  assert.doesNotMatch(capture.output(), /✔/);
 });
 
 test("plain output removes ANSI and ornaments", () => {
