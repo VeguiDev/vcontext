@@ -4,6 +4,9 @@ import {
   InputSchemaChangesAdd,
   InputSchemaChangesList,
   InputSchemaContext,
+  InputSchemaLinksAdd,
+  InputSchemaLinksList,
+  InputSchemaLinksRemove,
   InputSchemaMigrationList,
   InputSchemaMigrationStatus,
   InputSchemaDocumentsAdd,
@@ -14,6 +17,11 @@ import {
   InputSchemaFileContextDelete,
   InputSchemaFileContextList,
   InputSchemaFileContextUpsert,
+  InputSchemaOutsideLinksAdd,
+  InputSchemaOutsideLinksDelete,
+  InputSchemaOutsideLinksGet,
+  InputSchemaOutsideLinksList,
+  InputSchemaOutsideLinksUpdate,
   InputSchemaProjects,
   InputSchemaPromptsAdd,
   InputSchemaPromptsDelete,
@@ -441,6 +449,47 @@ export function createToolDefinitions(api: VContextAPI): ToolDefinition[] {
         return content(await project.prompts.delete(parsed.promptId));
       },
     },
+    {
+      name: "vcontext_links_list",
+      description: "List links for a project.",
+      inputSchema: InputSchemaLinksList,
+      handler: async (args) => {
+        const parsed = InputSchemaLinksList.parse(args);
+        return content(await api.linksList(project(parsed)));
+      },
+    },
+    {
+      name: "vcontext_links_add",
+      description: "Create a link to another project.",
+      inputSchema: InputSchemaLinksAdd,
+      handler: async (args) => {
+        const parsed = InputSchemaLinksAdd.parse(args);
+        return content(
+          await api.linksAdd(
+            project(parsed),
+            parsed.project_b_slug,
+            parsed.branch_name,
+            parsed.snapshot_id,
+          ),
+        );
+      },
+    },
+    {
+      name: "vcontext_links_remove",
+      description: "Remove a link to another project.",
+      inputSchema: InputSchemaLinksRemove,
+      handler: async (args) => {
+        const parsed = InputSchemaLinksRemove.parse(args);
+        return content(
+          await api.linksRemove(
+            project(parsed),
+            parsed.project_b_slug,
+            parsed.branch_name,
+            parsed.snapshot_id,
+          ),
+        );
+      },
+    },
   ];
   const definitions =
     typeof api.projectStatus === "function"
@@ -531,6 +580,69 @@ function createVersioningToolDefinitions(api: VContextAPI): ToolDefinition[] {
       async (value) => api.fileContextByPath(String(value.path), read(value)),
     ),
     entityHistoryTool(api, "project_prompt", "prompts", "promptId"),
+    tool(
+      "vcontext_outside_links_list",
+      "List outside links for a project.",
+      InputSchemaOutsideLinksList,
+      async (value) =>
+        api.outsideLinksList(
+          read(value),
+          value.source_file_context_id as string | undefined,
+        ),
+    ),
+    tool(
+      "vcontext_outside_links_add",
+      "Add an outside link to a project.",
+      InputSchemaOutsideLinksAdd,
+      async (value) =>
+        api.outsideLinksAdd(
+          fields(value, [
+            "source_file_context_id",
+            "target_project_slug",
+            "target_path",
+            "target_type",
+            "target_branch_name",
+            "target_snapshot_id",
+            "kind",
+            "description",
+          ]),
+          write(value),
+        ),
+    ),
+    tool(
+      "vcontext_outside_links_get",
+      "Get an outside link by record ID.",
+      InputSchemaOutsideLinksGet,
+      async (value) =>
+        api.outsideLinksGet(String(value.record_id), read(value)),
+    ),
+    tool(
+      "vcontext_outside_links_update",
+      "Update an outside link.",
+      InputSchemaOutsideLinksUpdate,
+      async (value) =>
+        api.outsideLinksUpdate(
+          String(value.record_id),
+          fields(value, [
+            "source_file_context_id",
+            "target_project_slug",
+            "target_path",
+            "target_type",
+            "target_branch_name",
+            "target_snapshot_id",
+            "kind",
+            "description",
+          ]),
+          write(value),
+        ),
+    ),
+    tool(
+      "vcontext_outside_links_delete",
+      "Delete an outside link.",
+      InputSchemaOutsideLinksDelete,
+      async (value) =>
+        api.outsideLinksDelete(String(value.record_id), write(value)),
+    ),
   );
 
   const namedBranch = ProjectPropertiesSchema.safeExtend({

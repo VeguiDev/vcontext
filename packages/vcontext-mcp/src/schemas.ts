@@ -16,6 +16,8 @@ export const CreateProjectSchema = z.object({
 
 export const LinkProjectSchema = z.object({
   project_b_slug: z.string().min(1),
+  branch_name: z.string().optional(),
+  snapshot_id: z.string().optional(),
 });
 
 export const ProjectPathSchema = z.object({
@@ -230,3 +232,106 @@ export const InputSchemaPromptsUpdate = WritePropertiesSchema.safeExtend({
 export const InputSchemaPromptsDelete = WritePropertiesSchema.safeExtend({
   promptId: z.string().describe("Prompt record ID"),
 });
+
+export const FileOutsideLinkKindEnum = z.enum([
+  "lib",
+  "sdk",
+  "api",
+  "dependency",
+  "external_call",
+  "import",
+]);
+
+export const FileOutsideLinkTargetTypeEnum = z.enum([
+  "file",
+  "directory",
+  "project",
+]);
+
+export const InputSchemaOutsideLinksList = ReadPropertiesSchema.safeExtend({
+  source_file_context_id: z
+    .string()
+    .optional()
+    .describe("Filter by source file context record ID"),
+});
+
+export const InputSchemaOutsideLinksAdd = WritePropertiesSchema.safeExtend({
+  source_file_context_id: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Source file context record ID"),
+  target_project_slug: z.string().min(1).describe("Target project slug"),
+  target_path: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Target file or directory path"),
+  target_type: FileOutsideLinkTargetTypeEnum.optional().describe(
+    "Target type: file, directory, or project",
+  ),
+  target_branch_name: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Target branch name"),
+  target_snapshot_id: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Target snapshot ID"),
+  kind: FileOutsideLinkKindEnum.optional().describe("Link kind"),
+  description: z.string().min(1).describe("Link description"),
+});
+
+export const InputSchemaOutsideLinksGet = ReadPropertiesSchema.safeExtend({
+  record_id: z.string().min(1).describe("Outside link record ID"),
+});
+
+export const InputSchemaOutsideLinksUpdate = WritePropertiesSchema.safeExtend({
+  record_id: z.string().min(1).describe("Outside link record ID"),
+  source_file_context_id: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Source file context record ID"),
+  target_project_slug: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Target project slug"),
+  target_path: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Target file or directory path"),
+  target_type: FileOutsideLinkTargetTypeEnum.optional().describe(
+    "Target type: file, directory, or project",
+  ),
+  target_branch_name: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Target branch name"),
+  target_snapshot_id: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Target snapshot ID"),
+  kind: FileOutsideLinkKindEnum.optional().describe("Link kind"),
+  description: z.string().min(1).optional().describe("Link description"),
+});
+
+export const InputSchemaOutsideLinksDelete = WritePropertiesSchema.safeExtend({
+  record_id: z.string().min(1).describe("Outside link record ID"),
+});
+
+export const InputSchemaLinksList = ProjectPropertiesSchema;
+
+export const InputSchemaLinksAdd = ProjectPropertiesSchema.safeExtend({
+  project_b_slug: z.string().min(1),
+  branch_name: z.string().optional(),
+  snapshot_id: z.string().optional(),
+});
+
+export const InputSchemaLinksRemove = InputSchemaLinksAdd;

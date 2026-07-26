@@ -2,6 +2,16 @@ export type TaskStatus = "BACKLOG" | "RUNNING" | "COMPLETED" | "CANCELLED";
 
 export type FileContextKind = "file" | "directory" | "path";
 
+export type FileOutsideLinkKind =
+  | "lib"
+  | "sdk"
+  | "api"
+  | "dependency"
+  | "external_call"
+  | "import";
+
+export type FileOutsideLinkTargetType = "file" | "directory" | "project";
+
 export interface VersionedRecord {
   readonly id: string;
   readonly record_id: string;
@@ -53,6 +63,17 @@ export interface FileContextRecord extends VersionedRecord {
 
 export interface ProjectPromptRecord extends VersionedRecord {
   readonly prompt: string;
+}
+
+export interface FileOutsideLinkRecord extends VersionedRecord {
+  readonly source_file_context_id: string | null;
+  readonly target_project_slug: string;
+  readonly target_path: string | null;
+  readonly target_type: FileOutsideLinkTargetType;
+  readonly target_branch_name: string | null;
+  readonly target_snapshot_id: string | null;
+  readonly kind: FileOutsideLinkKind;
+  readonly description: string;
 }
 
 export interface CreateTaskInput {
@@ -126,7 +147,8 @@ export type EntityName =
   | "project_prompt"
   | "task"
   | "change_note"
-  | "file_context";
+  | "file_context"
+  | "file_outside_link";
 
 export interface MergeApplyInput extends ProjectLocator {
   readonly source_branch: string;
@@ -297,4 +319,38 @@ export interface VContextAPI {
     locator: ProjectLocator,
   ): Promise<unknown>;
   mergeApply(input: MergeApplyInput): Promise<unknown>;
+  linksList(locator: ProjectLocator): Promise<readonly unknown[]>;
+  linksAdd(
+    locator: ProjectLocator,
+    projectBSlug: string,
+    branchName?: string,
+    snapshotId?: string,
+  ): Promise<unknown>;
+  linksRemove(
+    locator: ProjectLocator,
+    projectBSlug: string,
+    branchName?: string,
+    snapshotId?: string,
+  ): Promise<unknown>;
+  outsideLinksList(
+    selector: ReadSelector,
+    sourceFileContextId?: string,
+  ): Promise<readonly unknown[]>;
+  outsideLinksAdd(
+    input: Record<string, unknown>,
+    selector: WriteSelector,
+  ): Promise<unknown>;
+  outsideLinksGet(
+    recordId: string,
+    selector: ReadSelector,
+  ): Promise<unknown>;
+  outsideLinksUpdate(
+    recordId: string,
+    input: Record<string, unknown>,
+    selector: WriteSelector,
+  ): Promise<unknown>;
+  outsideLinksDelete(
+    recordId: string,
+    selector: WriteSelector,
+  ): Promise<unknown>;
 }

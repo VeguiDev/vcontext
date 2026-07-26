@@ -11,11 +11,12 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^4.4.3",
-    "@repo/vcontext-core": "workspace:^"
+    "@repo/vcontext-core": "workspace:^",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3"
   }
 }
