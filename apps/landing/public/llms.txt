@@ -1,0 +1,34 @@
+# VContext
+
+> Versioned context for AI coding agents.
+> Keep decisions, tasks, docs, and project knowledge in sync across agents, sessions, and machines.
+
+## Docs
+- Website: https://vcontext.dev
+- GitHub: https://github.com/VeguiDev/vcontext
+- Cloud app: https://app.vcontext.dev
+
+## Install
+- Shell: curl -fsSL https://vcontext.dev/install.sh | bash
+- PowerShell: irm https://vcontext.dev/install.ps1 | iex
+
+## What is VContext?
+VContext is a versioned context layer for AI coding agents. It stores decisions, tasks, documentation, changes, and project knowledge in a structured, branchable, and synchronizable format. Agents access context through CLI or MCP. Context is stored locally in a project-scoped SQLite database, with optional Cloud sync.
+
+## Key concepts
+- Project: A named collection of context associated with a codebase.
+- Branch: A named line of context history, parallel to Git branches.
+- Snapshot: An immutable point-in-time capture of context state.
+- Document: Structured project documentation (architecture, specs, notes).
+- Task: Tracked work items with status.
+- Change: A recorded note about a project modification.
+- File context: Descriptions attached to files and directories.
+- MCP: Model Context Protocol — the standard VContext uses to expose context to AI agents.
+
+## Integrations
+- OpenAI Codex (via MCP)
+- Claude Desktop (via MCP)
+- OpenCode (via MCP)
+- Terminal (via CLI)
+- Git repositories (via hooks)
+- Any MCP-compatible client

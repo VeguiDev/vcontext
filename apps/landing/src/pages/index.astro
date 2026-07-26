@@ -1,12 +1,15 @@
 ---
 import CloudSection from "../components/CloudSection.astro";
 import CompatibilityStrip from "../components/CompatibilityStrip.astro";
+import ComparisonSection from "../components/ComparisonSection.astro";
+import FaqSection from "../components/FaqSection.astro";
 import FeatureGrid from "../components/FeatureGrid.astro";
 import FinalCta from "../components/FinalCta.astro";
 import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import Hero from "../components/Hero.astro";
 import Pricing from "../components/Pricing.astro";
+import ProblemSection from "../components/ProblemSection.astro";
 import Workflow from "../components/Workflow.astro";
 import Layout from "../layouts/Layout.astro";
 ---
@@ -16,11 +19,14 @@ import Layout from "../layouts/Layout.astro";
   <Header />
   <main>
     <Hero />
+    <ProblemSection />
     <FeatureGrid />
+    <ComparisonSection />
     <Workflow />
     <CompatibilityStrip />
     <CloudSection />
     <Pricing />
+    <FaqSection />
     <FinalCta />
   </main>
   <Footer />

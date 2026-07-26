@@ -1,0 +1,126 @@
+---
+import SectionHeading from "./SectionHeading.astro";
+
+const faqs = [
+  {
+    question: "What is VContext?",
+    answer:
+      "VContext is a versioned context layer for AI coding agents. It stores decisions, tasks, documentation, changes, and project knowledge in a structured, branchable, and synchronizable format that agents can read and write through CLI or MCP.",
+  },
+  {
+    question: "Does VContext replace Git?",
+    answer:
+      "No. Git versions source code. VContext versions the project context that accompanies code — decisions, documentation, tasks, and agent prompts. The two tools complement each other.",
+  },
+  {
+    question: "What kind of context does VContext store?",
+    answer:
+      "Documents (architecture notes, specifications), tasks, change notes, file context (descriptions attached to files and directories), and prompts. Everything is organized in projects with branch and snapshot history.",
+  },
+  {
+    question: "Which coding agents work with VContext?",
+    answer:
+      "Any agent that supports MCP — including OpenAI Codex, Claude Desktop, and OpenCode — can read and write VContext. The CLI also works directly from any terminal.",
+  },
+  {
+    question: "How does VContext use MCP?",
+    answer:
+      "VContext implements the Model Context Protocol, exposing its project context as MCP resources that compatible agents can query and modify. Each project's documents, tasks, and changes become available to the agent through standard MCP tools.",
+  },
+  {
+    question: "Is VContext open source?",
+    answer:
+      "The VContext CLI is open source and available on GitHub at github.com/VeguiDev/vcontext. The Cloud service at app.vcontext.dev is a separate hosted product.",
+  },
+  {
+    question: "Where is project context stored?",
+    answer:
+      "Locally, in a project-scoped SQLite database managed by the VContext daemon. When you connect VContext Cloud, context can also be synced and shared across machines.",
+  },
+  {
+    question: "Can a team share the same context?",
+    answer:
+      "VContext Cloud enables branch-level sync and collaboration across team members. Each team member works with the same project context, synchronized through the cloud layer.",
+  },
+];
+---
+
+<section class="section page-shell" id="faq" aria-labelledby="faq-title">
+  <SectionHeading
+    id="faq-title"
+    eyebrow="FAQ"
+    title="Frequently asked questions."
+  />
+  <div class="faq-list">
+    {faqs.map((faq) => (
+      <details class="faq-item">
+        <summary>{faq.question}</summary>
+        <p>{faq.answer}</p>
+      </details>
+    ))}
+  </div>
+  <script type="application/ld+json" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": faqs.map((faq) => ({
+      "@type": "Question",
+      "name": faq.question,
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": faq.answer,
+      },
+    })),
+  })} />
+</section>
+
+<style>
+  .faq-list {
+    max-width: 800px;
+    margin: 0 auto;
+    display: grid;
+    gap: 1rem;
+  }
+  .faq-item {
+    border: 1px solid var(--line-strong);
+    border-radius: 0.5rem;
+    background: var(--paper);
+    overflow: hidden;
+  }
+  .faq-item summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    font-family: var(--display);
+    font-size: clamp(1rem, 1.25vw, 1.1rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+    color: var(--ink);
+    cursor: pointer;
+    list-style: none;
+  }
+  .faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+  .faq-item summary::after {
+    content: "+";
+    font-size: 1.35rem;
+    font-weight: 400;
+    line-height: 1;
+    color: var(--accent);
+    transition: transform 0.2s ease;
+  }
+  .faq-item[open] summary::after {
+    content: "−";
+  }
+  .faq-item p {
+    margin: 0;
+    padding: 0 1.5rem 1.25rem;
+    max-width: 72ch;
+    font-size: clamp(0.875rem, 1.1vw, 0.95rem);
+    line-height: 1.55;
+    color: var(--muted);
+  }
+</style>

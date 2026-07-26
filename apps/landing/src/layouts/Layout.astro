@@ -7,8 +7,8 @@ interface Props {
 }
 
 const {
-  title = "VContext — Git for AI context",
-  description = "Durable, versioned context for AI coding agents. Share project knowledge across models through CLI and MCP.",
+  title = "VContext — Versioned Context for AI Coding Agents",
+  description = "VContext versions and synchronizes decisions, tasks, documentation, and project knowledge across AI coding agents, branches, sessions, and machines.",
 } = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, Astro.site);
@@ -20,24 +20,63 @@ const socialImage = new URL("/og.png", Astro.site);
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="/favicon.ico" />
-    <meta name="generator" content={Astro.generator} />
-    <meta name="theme-color" content="#f4f7fb" />
+    <title>{title}</title>
     <meta name="description" content={description} />
+    <meta name="keywords" content="VContext, AI context management, context for coding agents, persistent context, MCP context server, version control for AI context, developer context management" />
+    <meta name="application-name" content="VContext" />
+    <meta name="author" content="vegui.dev" />
+    <meta name="creator" content="vegui.dev" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#f4f7fb" />
     <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="preconnect" href="https://app.vcontext.dev" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="VContext" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={socialImage} />
-    <meta property="og:image:width" content="1659" />
-    <meta property="og:image:height" content="948" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={socialImage} />
-    <title>{title}</title>
+    <script type="application/ld+json" set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://vcontext.dev/#organization",
+          "name": "VContext",
+          "url": "https://vcontext.dev",
+          "logo": "https://vcontext.dev/vcontext-logo.png",
+          "sameAs": [
+            "https://github.com/VeguiDev/vcontext",
+            "https://vegui.dev"
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://vcontext.dev/#website",
+          "name": "VContext",
+          "url": "https://vcontext.dev",
+          "description": "VContext versions and synchronizes decisions, tasks, documentation, and project knowledge across AI coding agents, branches, sessions, and machines."
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://vcontext.dev/#softwareapplication",
+          "name": "VContext",
+          "url": "https://vcontext.dev",
+          "description": "VContext versions and synchronizes decisions, tasks, documentation, and project knowledge across AI coding agents, branches, sessions, and machines.",
+          "applicationCategory": "DeveloperApplication",
+          "operatingSystem": "Linux, macOS, Windows"
+        }
+      ]
+    })} />
   </head>
   <body>
     <slot />

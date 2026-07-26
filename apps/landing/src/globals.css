@@ -949,7 +949,7 @@ code {
   align-content: start;
   gap: 0.8rem;
 }
-.site-footer__links h2 {
+.site-footer__links strong {
   margin: 0 0 0.7rem;
   color: #777973;
   font: 0.6rem var(--mono);

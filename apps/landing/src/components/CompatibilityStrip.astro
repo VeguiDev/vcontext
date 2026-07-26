@@ -1,11 +1,11 @@
 ---
 const integrations = [
-  ["Codex", "MCP"],
-  ["Claude Desktop", "MCP"],
-  ["OpenCode", "MCP"],
-  ["Terminal", "CLI"],
-  ["Git repositories", "Native"],
-  ["Any MCP client", "Protocol"],
+  ["Codex", "MCP", "AI coding agent by OpenAI"],
+  ["Claude Desktop", "MCP", "AI assistant by Anthropic"],
+  ["OpenCode", "MCP", "Open-source coding agent"],
+  ["Terminal", "CLI", "Direct CLI for human workflows"],
+  ["Git repositories", "Native", "Automatic hook integration"],
+  ["Any MCP client", "Protocol", "Standard protocol, compatible tools"],
 ];
 ---
 
@@ -17,11 +17,12 @@ const integrations = [
       <p>VContext stays underneath your tools, not in the way of them.</p>
     </div>
     <div class="compatibility__grid">
-      {integrations.map(([name, type], index) => (
+      {integrations.map(([name, type, description], index) => (
         <div class="integration-card">
           <span>{String(index + 1).padStart(2, "0")}</span>
           <strong>{name}</strong>
           <small>{type}</small>
+          <p class="integration-card__desc">{description}</p>
         </div>
       ))}
     </div>

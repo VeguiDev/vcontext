@@ -1,0 +1,17 @@
+{
+  "name": "VContext",
+  "short_name": "VContext",
+  "description": "VContext versions and synchronizes decisions, tasks, documentation, and project knowledge across AI coding agents, branches, sessions, and machines.",
+  "start_url": "/",
+  "display": "browser",
+  "theme_color": "#222f3e",
+  "background_color": "#f4f7fb",
+  "categories": ["developer-tools", "ai"],
+  "icons": [
+    {
+      "src": "/vcontext-logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

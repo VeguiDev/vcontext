@@ -1,0 +1,85 @@
+---
+import SectionHeading from "./SectionHeading.astro";
+
+const tools = [
+  {
+    name: "Git",
+    description:
+      "Versions source code and files. Tracks changes, supports branches and merges. Does not manage project knowledge, decisions, or agent context.",
+  },
+  {
+    name: "AGENTS.md / Markdown",
+    description:
+      "Static documentation you write by hand. Useful as a reference, but does not version history, does not branch, and requires manual updates.",
+  },
+  {
+    name: "Agent memory",
+    description:
+      "Built into each coding agent. Ephemeral or isolated per tool. Does not transfer between Codex, Claude, OpenCode, or other agents.",
+  },
+  {
+    name: "VContext",
+    description:
+      "Versioned, branchable, shareable context layer. Complements Git by tracking the knowledge that lives around your code. Works across agents via MCP.",
+  },
+];
+---
+
+<section class="section page-shell" id="comparison" aria-labelledby="comparison-title">
+  <SectionHeading
+    id="comparison-title"
+    eyebrow="Comparison"
+    title="How VContext fits alongside your existing tools."
+  />
+  <div class="comparison-grid">
+    {tools.map((tool) => (
+      <article class="comparison-card">
+        <h3>{tool.name}</h3>
+        <p>{tool.description}</p>
+      </article>
+    ))}
+  </div>
+</section>
+
+<style>
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.5rem;
+  }
+  .comparison-card {
+    display: grid;
+    align-content: start;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 0.5rem;
+    background: var(--paper);
+  }
+  .comparison-card h3 {
+    margin: 0;
+    font-family: var(--display);
+    font-size: clamp(1.15rem, 1.5vw, 1.35rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .comparison-card p {
+    margin: 0;
+    max-width: 72ch;
+    font-size: clamp(0.85rem, 1.1vw, 0.95rem);
+    line-height: 1.55;
+    color: var(--muted);
+  }
+  @media (max-width: 1100px) {
+    .comparison-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 760px) {
+    .comparison-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
