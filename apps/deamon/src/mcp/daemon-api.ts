@@ -397,6 +397,114 @@ export class DaemonVContextAPI implements VContextAPI {
     );
   }
 
+  async linksList(locator: ProjectLocator) {
+    const resolved = this.resolveLocator(locator);
+    const slug = resolved.project_slug;
+    if (!slug) throw new ProjectResolutionError();
+    return this.services.registry.linksBySlug(slug) ?? [];
+  }
+
+  async linksAdd(
+    locator: ProjectLocator,
+    projectBSlug: string,
+    branchName?: string,
+    snapshotId?: string,
+  ) {
+    const resolved = this.resolveLocator(locator);
+    const slug = resolved.project_slug;
+    if (!slug) throw new ProjectResolutionError();
+    const project = this.services.registry.findBySlug(slug);
+    const linkedProject = this.services.registry.findBySlug(projectBSlug);
+    if (!project || !linkedProject) throw new Error("Project not found");
+    return {
+      linked: this.services.registry.link(
+        project.id,
+        linkedProject.id,
+        branchName,
+        snapshotId,
+      ),
+    };
+  }
+
+  async linksRemove(
+    locator: ProjectLocator,
+    projectBSlug: string,
+    branchName?: string,
+    snapshotId?: string,
+  ) {
+    const resolved = this.resolveLocator(locator);
+    const slug = resolved.project_slug;
+    if (!slug) throw new ProjectResolutionError();
+    const project = this.services.registry.findBySlug(slug);
+    const linkedProject = this.services.registry.findBySlug(projectBSlug);
+    if (!project || !linkedProject) throw new Error("Project not found");
+    return {
+      unlinked: this.services.registry.unlink(
+        project.id,
+        linkedProject.id,
+        branchName,
+        snapshotId,
+      ),
+    };
+  }
+
+  async outsideLinksList(
+    selector: ReadSelector,
+    sourceFileContextId?: string,
+  ) {
+    if (sourceFileContextId) {
+      return this.services.application!.getOutsideLinksBySource(
+        this.resolveLocator(selector),
+        sourceFileContextId,
+        selector,
+      );
+    }
+    return this.services.application!.listOutsideLinks(
+      this.resolveLocator(selector),
+      selector,
+    );
+  }
+
+  async outsideLinksAdd(
+    input: Record<string, unknown>,
+    selector: WriteSelector,
+  ) {
+    return this.services.application!.createOutsideLink(
+      this.resolveLocator(selector),
+      input as never,
+      selector,
+    );
+  }
+
+  async outsideLinksGet(recordId: string, selector: ReadSelector) {
+    return this.services.application!.getOutsideLink(
+      this.resolveLocator(selector),
+      recordId,
+      selector,
+    );
+  }
+
+  async outsideLinksUpdate(
+    recordId: string,
+    input: Record<string, unknown>,
+    selector: WriteSelector,
+  ) {
+    return this.services.application!.updateOutsideLink(
+      this.resolveLocator(selector),
+      recordId,
+      input as never,
+      selector,
+    );
+  }
+
+  async outsideLinksDelete(recordId: string, selector: WriteSelector) {
+    return this.services.application!.deleteOutsideLink(
+      this.resolveLocator(selector),
+      recordId,
+      selector,
+    );
+  }
+
   private resolveLocator(locator: ProjectLocator) {
     const project_slug = locator.project_slug ?? locator.slug;
     if (project_slug) return { project_slug };
