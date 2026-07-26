@@ -11,6 +11,7 @@ import type {
   DocumentStore,
   FileContextRecord,
   FileContextStore,
+  FileOutsideLinkRecord,
   ProjectHandle,
   ProjectPromptRecord,
   ProjectMigrationListRecord,
@@ -314,6 +315,93 @@ export class CLIVContextAPI implements VContextAPI {
     );
   }
 
+  async linksList(locator: ProjectLocator) {
+    return this.getJson(`/projects/${this.resolveLocator(locator)}/links`);
+  }
+
+  async linksAdd(
+    locator: ProjectLocator,
+    projectBSlug: string,
+    branchName?: string,
+    snapshotId?: string,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/links`,
+      "POST",
+      {
+        project_b_slug: projectBSlug,
+        ...(branchName !== undefined && { branch_name: branchName }),
+        ...(snapshotId !== undefined && { snapshot_id: snapshotId }),
+      },
+    );
+  }
+
+  async linksRemove(
+    locator: ProjectLocator,
+    projectBSlug: string,
+    branchName?: string,
+    snapshotId?: string,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(locator)}/links`,
+      "DELETE",
+      {
+        project_b_slug: projectBSlug,
+        ...(branchName !== undefined && { branch_name: branchName }),
+        ...(snapshotId !== undefined && { snapshot_id: snapshotId }),
+      },
+    );
+  }
+
+  async outsideLinksList(
+    selector: ReadSelector,
+    sourceFileContextId?: string,
+  ) {
+    const query = this.readQuery(selector);
+    if (sourceFileContextId) {
+      query.set("source_file_context_id", sourceFileContextId);
+    }
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/outside-links?${query}`,
+    );
+  }
+
+  async outsideLinksAdd(
+    input: Record<string, unknown>,
+    selector: WriteSelector,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/outside-links?${this.writeQuery(selector)}`,
+      "POST",
+      input,
+    );
+  }
+
+  async outsideLinksGet(recordId: string, selector: ReadSelector) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/outside-links/${encodeURIComponent(recordId)}?${this.readQuery(selector)}`,
+    );
+  }
+
+  async outsideLinksUpdate(
+    recordId: string,
+    input: Record<string, unknown>,
+    selector: WriteSelector,
+  ) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/outside-links/${encodeURIComponent(recordId)}?${this.writeQuery(selector)}`,
+      "PATCH",
+      input,
+    );
+  }
+
+  async outsideLinksDelete(recordId: string, selector: WriteSelector) {
+    return this.getJson(
+      `/projects/${this.resolveLocator(selector)}/outside-links/${encodeURIComponent(recordId)}?${this.writeQuery(selector)}`,
+      "DELETE",
+    );
+  }
+
   private async getJson(path: string, method = "GET", body?: unknown) {
     return JSON.parse(await this.api(path, method, body));
   }
@@ -380,6 +468,15 @@ function entityRoute(entity: EntityName) {
       : entity === "file_context"
         ? "file-context"
         : `${entity}s`;
+}
+
+/** @internal */
+interface LinkRecord {
+  readonly project_a_slug: string;
+  readonly project_b_slug: string;
+  readonly branch_name: string | null;
+  readonly snapshot_id: string | null;
+  readonly created_at: number;
 }
 
 class CliProjectHandle implements ProjectHandle {
@@ -489,5 +586,85 @@ class CliProjectHandle implements ProjectHandle {
       JSON.parse(
         await this.callApi(`/projects/${this.slug}/prompts/${id}`, "DELETE"),
       ).deleted,
+  };
+
+  readonly links: {
+    add: (
+      targetSlug: string,
+      branchName?: string,
+      snapshotId?: string,
+    ) => Promise<LinkRecord>;
+    list: () => Promise<readonly LinkRecord[]>;
+    remove: (
+      targetSlug: string,
+      branchName?: string,
+      snapshotId?: string,
+    ) => Promise<{ readonly deleted: boolean }>;
+  } = {
+    add: async (targetSlug, branchName?, snapshotId?) =>
+      JSON.parse(
+        await this.callApi(`/projects/${this.slug}/links`, "POST", {
+          project_b_slug: targetSlug,
+          ...(branchName !== undefined && {
+            branch_name: branchName,
+          }),
+          ...(snapshotId !== undefined && {
+            snapshot_id: snapshotId,
+          }),
+        }),
+      ),
+    list: async () =>
+      JSON.parse(await this.callApi(`/projects/${this.slug}/links`)),
+    remove: async (targetSlug, branchName?, snapshotId?) =>
+      JSON.parse(
+        await this.callApi(`/projects/${this.slug}/links`, "DELETE", {
+          project_b_slug: targetSlug,
+          ...(branchName !== undefined && {
+            branch_name: branchName,
+          }),
+          ...(snapshotId !== undefined && {
+            snapshot_id: snapshotId,
+          }),
+        }),
+      ),
+  };
+
+  readonly outsideLinks: {
+    add: (input: Record<string, unknown>) => Promise<FileOutsideLinkRecord>;
+    list: (
+      sourceFileContextId?: string,
+    ) => Promise<readonly FileOutsideLinkRecord[]>;
+    show: (recordId: string) => Promise<FileOutsideLinkRecord>;
+    delete: (recordId: string) => Promise<{ readonly deleted: boolean }>;
+  } = {
+    add: async (input) =>
+      JSON.parse(
+        await this.callApi(
+          `/projects/${this.slug}/outside-links`,
+          "POST",
+          input,
+        ),
+      ),
+    list: async (sourceFileContextId?) => {
+      const query = sourceFileContextId
+        ? `?source_file_context_id=${encodeURIComponent(sourceFileContextId)}`
+        : "";
+      return JSON.parse(
+        await this.callApi(`/projects/${this.slug}/outside-links${query}`),
+      );
+    },
+    show: async (recordId) =>
+      JSON.parse(
+        await this.callApi(
+          `/projects/${this.slug}/outside-links/${recordId}`,
+        ),
+      ),
+    delete: async (recordId) =>
+      JSON.parse(
+        await this.callApi(
+          `/projects/${this.slug}/outside-links/${recordId}`,
+          "DELETE",
+        ),
+      ),
   };
 }

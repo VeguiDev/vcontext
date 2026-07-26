@@ -37,22 +37,25 @@ import {
 } from "./commands/sync.js";
 import { updateCommand } from "./commands/update.js";
 import { setupCommand } from "./commands/setup.js";
-import { configureUi, getUi, parseGlobalOptions } from "./ui/index.js";
+import { configureUi, getUi, parseGlobalOptions, type CliUi } from "./ui/index.js";
 import { errorData } from "./ui/errors.js";
 import {
   finishAutomaticUpdateCheck,
   reportPendingUpdateResult,
   startAutomaticUpdateCheck,
 } from "./update/automatic.js";
+import { DEFAULT_COMPACT_PROMPT_TEMPLATE } from "@vcontext/versioning-contract";
 import { VCONTEXT_VERSION } from "./version.js";
 import {
   renderBranch,
   renderBranches,
   renderDeleted,
   renderDiff,
+  renderEmpty,
   renderEntity,
   renderEntityList,
   renderEntityMutation,
+  renderHeading,
   renderHistory,
   renderMigration,
   renderObject,
@@ -64,6 +67,7 @@ import {
   renderSnapshot,
   renderSnapshots,
   renderStatus,
+  renderTable,
 } from "./ui/renderers.js";
 
 /** Run the CLI without assuming how the JavaScript runtime was started. */
@@ -131,6 +135,8 @@ async function main(input: string[]) {
     snapshot: snapshotCommand,
     merge: mergeCommand,
     update: updateCommand,
+    link: linkCommand,
+    "outside-link": outsideLinkCommand,
     checkout: (args) => branchCommand(["checkout", ...args]),
   };
   const handler = commands[command];
@@ -518,6 +524,218 @@ async function mergeCommand(input: string[]) {
   );
 }
 
+async function linkCommand(input: string[]) {
+  const subcommand = input.shift();
+  const output = outputOptions(input);
+
+  if (subcommand === "add") {
+    const branchName = takeOption(input, "--branch");
+    const snapshotId = takeOption(input, "--snapshot");
+    const targetSlug = input.find((a) => !a.startsWith("--"));
+    if (!targetSlug) {
+      throw new DaemonClientError(
+        "Usage: vcontext link add <target-slug> [--branch <name>] [--snapshot <id>]",
+        2,
+      );
+    }
+    const slug = await resolveProjectSlug(input);
+    return emit(
+      await requestValue("POST", `/projects/${slug}/links`, {
+        project_b_slug: targetSlug,
+        ...(branchName !== undefined && { branch_name: branchName }),
+        ...(snapshotId !== undefined && { snapshot_id: snapshotId }),
+      }),
+      output,
+      (value) => {
+        const result = value as Record<string, unknown>;
+        if (result.linked) {
+          getUi().success(getUi().qualify("Linked project", targetSlug));
+        } else {
+          getUi().info(`Already linked: ${targetSlug}`);
+        }
+      },
+    );
+  }
+
+  if (subcommand === "list") {
+    const slug = await resolveProjectSlug(input);
+    return emit(
+      await requestValue("GET", `/projects/${slug}/links`),
+      output,
+      (value) => renderLinkList(value, getUi()),
+    );
+  }
+
+  if (subcommand === "remove") {
+    const branchName = takeOption(input, "--branch");
+    const snapshotId = takeOption(input, "--snapshot");
+    const targetSlug = input.find((a) => !a.startsWith("--"));
+    if (!targetSlug) {
+      throw new DaemonClientError(
+        "Usage: vcontext link remove <target-slug> [--branch <name>] [--snapshot <id>]",
+        2,
+      );
+    }
+    const slug = await resolveProjectSlug(input);
+    return emit(
+      await requestValue("DELETE", `/projects/${slug}/links`, {
+        project_b_slug: targetSlug,
+        ...(branchName !== undefined && { branch_name: branchName }),
+        ...(snapshotId !== undefined && { snapshot_id: snapshotId }),
+      }),
+      output,
+      (value) => {
+        const result = value as Record<string, unknown>;
+        if (result.unlinked) {
+          getUi().success(getUi().qualify("Unlinked", targetSlug));
+        } else {
+          getUi().info(`No link found: ${targetSlug}`);
+        }
+      },
+    );
+  }
+
+  // Fall through to the dev link command when subcommand is not project-link related
+  throw new DaemonClientError(
+    "Usage: vcontext link <add|list|remove> [target-slug] [--branch] [--snapshot]",
+    2,
+  );
+}
+
+function renderLinkList(value: unknown, ui: CliUi): void {
+  if (!Array.isArray(value) || value.length === 0) return renderEmpty(ui);
+  renderHeading(ui, "Links");
+  renderTable(
+    ui,
+    ["Project", "Slug", "Branch", "Snapshot"],
+    value.flatMap((item) => {
+      const record = item as Record<string, unknown>;
+      return [
+        [
+          String(record.name ?? ""),
+          String(record.slug ?? ""),
+          String(record.branch_name ?? ""),
+          String(record.snapshot_id ?? ""),
+        ],
+      ];
+    }),
+  );
+}
+
+async function outsideLinkCommand(input: string[]) {
+  const subcommand = input.shift();
+  const output = outputOptions(input);
+
+  if (subcommand === "add") {
+    const source = takeOption(input, "--source");
+    const targetType = takeOption(input, "--type");
+    const targetSlug = takeOption(input, "--target-slug");
+    const targetPath = takeOption(input, "--target-path");
+    const kind = takeOption(input, "--kind");
+    const description = takeOption(input, "--description");
+    if (!targetType || !kind || !description) {
+      throw new DaemonClientError(
+        "Usage: vcontext outside-link add --source <file-context-id> --type file|directory|project [--target-slug <slug>] [--target-path <path>] --kind lib|sdk|api|dependency|external-call|import --description <text>",
+        2,
+      );
+    }
+    const slug = await resolveProjectSlug(input);
+    const body: Record<string, unknown> = {
+      target_type: targetType,
+      kind,
+      description,
+    };
+    if (source !== undefined) body.source_file_context_id = source;
+    if (targetSlug !== undefined) body.target_project_slug = targetSlug;
+    if (targetPath !== undefined) body.target_path = targetPath;
+    return emit(
+      await requestValue("POST", `/projects/${slug}/outside-links`, body),
+      output,
+      (value) => renderObject(value, getUi(), "Outside link created"),
+    );
+  }
+
+  if (subcommand === "list") {
+    const source = takeOption(input, "--source");
+    const slug = await resolveProjectSlug(input);
+    const query = source
+      ? `?source_file_context_id=${encodeURIComponent(source)}`
+      : "";
+    return emit(
+      await requestValue("GET", `/projects/${slug}/outside-links${query}`),
+      output,
+      (value) => renderOutsideLinkList(value, getUi()),
+    );
+  }
+
+  if (subcommand === "show") {
+    const recordId = input.find((a) => !a.startsWith("--"));
+    if (!recordId) {
+      throw new DaemonClientError(
+        "Usage: vcontext outside-link show <record-id>",
+        2,
+      );
+    }
+    const slug = await resolveProjectSlug(input);
+    return emit(
+      await requestValue(
+        "GET",
+        `/projects/${slug}/outside-links/${encodeURIComponent(recordId)}`,
+      ),
+      output,
+      (value) => renderObject(value, getUi(), "Outside link"),
+    );
+  }
+
+  if (subcommand === "delete") {
+    const recordId = input.find((a) => !a.startsWith("--"));
+    if (!recordId) {
+      throw new DaemonClientError(
+        "Usage: vcontext outside-link delete <record-id>",
+        2,
+      );
+    }
+    await confirmDestructive("Delete outside link", getUi().options.yes);
+    const slug = await resolveProjectSlug(input);
+    return emit(
+      await requestValue(
+        "DELETE",
+        `/projects/${slug}/outside-links/${encodeURIComponent(recordId)}`,
+      ),
+      output,
+      (value) => renderDeleted(value, getUi(), "outside link"),
+    );
+  }
+
+  throw new DaemonClientError(
+    "Usage: vcontext outside-link <add|list|show|delete>",
+    2,
+  );
+}
+
+function renderOutsideLinkList(value: unknown, ui: CliUi): void {
+  if (!Array.isArray(value) || value.length === 0) return renderEmpty(ui);
+  renderHeading(ui, "Outside links");
+  renderTable(
+    ui,
+    ["ID", "Target", "Type", "Kind", "Description"],
+    value.flatMap((item) => {
+      const record = item as Record<string, unknown>;
+      return [
+        [
+          String(record.record_id ?? ""),
+          String(
+            record.target_project_slug ?? record.target_path ?? "",
+          ),
+          String(record.target_type ?? ""),
+          String(record.kind ?? ""),
+          String(record.description ?? ""),
+        ],
+      ];
+    }),
+  );
+}
+
 async function resolveRightTarget(input: string[]) {
   const explicit =
     takeOption(input, "--project") ?? takeOption(input, "--slug");
@@ -749,6 +967,25 @@ async function init(input: string[]) {
       ],
     });
     initialized = parseJson<Record<string, unknown>>(response);
+  }
+
+  // Auto-seed default compact prompt for fresh projects
+  try {
+    const slug = initialized.slug as string | undefined;
+    if (slug) {
+      const promptsResponse = await request(
+        "GET",
+        `/projects/${slug}/prompts`,
+      );
+      const prompts = parseJson<Array<unknown>>(promptsResponse);
+      if (prompts.length === 0) {
+        await request("POST", `/projects/${slug}/prompts`, {
+          prompt: DEFAULT_COMPACT_PROMPT_TEMPLATE,
+        });
+      }
+    }
+  } catch {
+    // Best-effort: prompt seeding must not fail project init
   }
 
   const hooks = ensureProjectHooks(localPath);
