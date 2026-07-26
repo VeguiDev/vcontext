@@ -21,6 +21,11 @@ export interface RegisteredProject {
   updated_at: number;
 }
 
+export interface LinkedProject extends RegisteredProject {
+  branch_name: string | null;
+  snapshot_id: string | null;
+}
+
 export type ProjectPathType = "local" | "remote";
 
 export interface ProjectPathRecord {
@@ -184,33 +189,72 @@ export class RegistryStore {
     );
   }
 
-  link(projectId: number, projectBId: number) {
+  link(
+    projectId: number,
+    projectBId: number,
+    branchName?: string | null,
+    snapshotId?: string | null,
+  ) {
     if (projectId === projectBId) {
       return false;
     }
 
     const now = Date.now();
 
+    try {
+      return (
+        this.db
+          .prepare(
+            `INSERT INTO project_link (project_id, project_b_id, branch_name, snapshot_id, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          )
+          .run(projectId, projectBId, branchName ?? null, snapshotId ?? null, now)
+          .changes > 0
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  unlink(
+    projectId: number,
+    projectBId: number,
+    branchName?: string | null,
+    snapshotId?: string | null,
+  ) {
     return (
       this.db
         .prepare(
-          `INSERT OR IGNORE INTO project_link (project_id, project_b_id, created_at)
-         VALUES (?, ?, ?)`,
+          `DELETE FROM project_link
+           WHERE project_id = ? AND project_b_id = ?
+             AND branch_name IS ? AND snapshot_id IS ?`,
         )
-        .run(projectId, projectBId, now).changes > 0
+        .run(projectId, projectBId, branchName ?? null, snapshotId ?? null)
+        .changes > 0
+    );
+  }
+
+  unlinkAll(projectId: number, projectBId: number) {
+    return (
+      this.db
+        .prepare(
+          `DELETE FROM project_link
+           WHERE project_id = ? AND project_b_id = ?`,
+        )
+        .run(projectId, projectBId).changes > 0
     );
   }
 
   links(projectId: number) {
     return this.db
       .prepare(
-        `SELECT linked.*
+        `SELECT linked.*, link.branch_name, link.snapshot_id
          FROM project_link link
          JOIN project linked ON linked.id = link.project_b_id
          WHERE link.project_id = ?
          ORDER BY linked.name ASC`,
       )
-      .all(projectId) as RegisteredProject[];
+      .all(projectId) as LinkedProject[];
   }
 
   linksBySlug(slug: string) {

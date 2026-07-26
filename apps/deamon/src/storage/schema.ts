@@ -7,6 +7,7 @@ const ENTITY_TABLES = [
   "change_note",
   "task",
   "file_context",
+  "file_outside_link",
 ] as const;
 
 export function migrateRegistry(db: Database) {
@@ -44,6 +45,33 @@ export function migrateRegistry(db: Database) {
     );
   `);
   addColumnIfMissing(db, "project", "uuid", "TEXT");
+
+  addColumnIfMissing(db, "project_link", "branch_name", "TEXT");
+  addColumnIfMissing(db, "project_link", "snapshot_id", "TEXT");
+
+  if ((db.pragma("user_version", { simple: true }) as number) < 1) {
+    db.exec("PRAGMA foreign_keys = ON");
+    db.exec(`
+      CREATE TABLE project_link_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        project_b_id INTEGER NOT NULL,
+        branch_name TEXT,
+        snapshot_id TEXT,
+        created_at INTEGER NOT NULL,
+        branch_key TEXT GENERATED ALWAYS AS (COALESCE(branch_name, '__NULL__')) STORED,
+        snapshot_key TEXT GENERATED ALWAYS AS (COALESCE(snapshot_id, '__NULL__')) STORED,
+        UNIQUE(project_id, project_b_id, branch_key, snapshot_key),
+        FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE,
+        FOREIGN KEY (project_b_id) REFERENCES project(id) ON DELETE CASCADE
+      );
+      INSERT INTO project_link_new (id, project_id, project_b_id, branch_name, snapshot_id, created_at)
+      SELECT id, project_id, project_b_id, NULL, NULL, created_at FROM project_link;
+      DROP TABLE project_link;
+      ALTER TABLE project_link_new RENAME TO project_link;
+    `);
+    db.pragma("user_version = 1");
+  }
 }
 
 export function migrateVersionedProjectSchema(db: Database) {
@@ -87,7 +115,7 @@ export function migrateSyncProjectSchema(db: Database) {
       ON snapshot(object_hash) WHERE object_hash IS NOT NULL;
     CREATE TABLE IF NOT EXISTS record_identity (
       record_id TEXT PRIMARY KEY,
-      entity_type TEXT NOT NULL CHECK(entity_type IN ('project_prompt','document','change_note','task','file_context')),
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('project_prompt','document','change_note','task','file_context','file_outside_link')),
       created_at INTEGER NOT NULL,
       object_hash TEXT UNIQUE
     );
@@ -180,6 +208,33 @@ export function migrateGitAwareProjectSchema(db: Database) {
     CREATE INDEX IF NOT EXISTS snapshot_metadata_commit_idx ON snapshot_metadata(git_commit_sha);
     CREATE INDEX IF NOT EXISTS sync_job_retry_idx ON sync_job(next_retry_at, id);
     CREATE INDEX IF NOT EXISTS sync_conflict_pending_idx ON sync_conflict(resolved_at, id);
+  `);
+}
+
+export function migrateFileOutsideLinkSchema(db: Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS file_outside_link (
+      id TEXT PRIMARY KEY,
+      record_id TEXT NOT NULL,
+      snapshot_id TEXT NOT NULL,
+      previous_revision_id TEXT,
+      deleted_at INTEGER,
+      source_file_context_id TEXT,
+      target_project_slug TEXT NOT NULL,
+      target_path TEXT,
+      target_type TEXT NOT NULL CHECK(target_type IN ('file','directory','project')),
+      target_branch_name TEXT,
+      target_snapshot_id TEXT,
+      kind TEXT NOT NULL CHECK(kind IN ('lib','sdk','api','dependency','external_call','import')),
+      description TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      object_hash TEXT,
+      FOREIGN KEY (snapshot_id) REFERENCES snapshot(id),
+      FOREIGN KEY (previous_revision_id) REFERENCES file_outside_link(id)
+    );
+    CREATE INDEX IF NOT EXISTS file_outside_link_record_snapshot_idx ON file_outside_link(record_id, snapshot_id);
+    CREATE INDEX IF NOT EXISTS file_outside_link_source_idx ON file_outside_link(source_file_context_id);
   `);
 }
 
@@ -329,11 +384,33 @@ function createVersionedSchema(db: Database) {
       FOREIGN KEY (snapshot_id) REFERENCES snapshot(id),
       FOREIGN KEY (previous_revision_id) REFERENCES file_context(id)
     );
+    CREATE TABLE IF NOT EXISTS file_outside_link (
+      id TEXT PRIMARY KEY,
+      record_id TEXT NOT NULL,
+      snapshot_id TEXT NOT NULL,
+      previous_revision_id TEXT,
+      deleted_at INTEGER,
+      source_file_context_id TEXT,
+      target_project_slug TEXT NOT NULL,
+      target_path TEXT,
+      target_type TEXT NOT NULL CHECK(target_type IN ('file','directory','project')),
+      target_branch_name TEXT,
+      target_snapshot_id TEXT,
+      kind TEXT NOT NULL CHECK(kind IN ('lib','sdk','api','dependency','external_call','import')),
+      description TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      object_hash TEXT,
+      FOREIGN KEY (snapshot_id) REFERENCES snapshot(id),
+      FOREIGN KEY (previous_revision_id) REFERENCES file_outside_link(id)
+    );
     CREATE INDEX IF NOT EXISTS project_prompt_record_snapshot_idx ON project_prompt(record_id, snapshot_id);
     CREATE INDEX IF NOT EXISTS document_record_snapshot_idx ON document(record_id, snapshot_id);
     CREATE INDEX IF NOT EXISTS change_note_record_snapshot_idx ON change_note(record_id, snapshot_id);
     CREATE INDEX IF NOT EXISTS task_record_snapshot_idx ON task(record_id, snapshot_id);
     CREATE INDEX IF NOT EXISTS file_context_record_snapshot_idx ON file_context(record_id, snapshot_id);
+    CREATE INDEX IF NOT EXISTS file_outside_link_record_snapshot_idx ON file_outside_link(record_id, snapshot_id);
+    CREATE INDEX IF NOT EXISTS file_outside_link_source_idx ON file_outside_link(source_file_context_id);
     CREATE INDEX IF NOT EXISTS snapshot_parent_parent_idx ON snapshot_parent(parent_snapshot_id);
   `);
 }
