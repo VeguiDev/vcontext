@@ -3,6 +3,7 @@ import migration1_0_0_baseline from "./migrations/1.0.0-baseline.js";
 import migration2_0_0_versioned_records from "./migrations/2.0.0-versioned-records.js";
 import migration3_0_0_sync from "./migrations/3.0.0-sync.js";
 import migration4_0_0_git_aware from "./migrations/4.0.0-git-aware.js";
+import migration5_0_0_file_outside_link from "./migrations/5.0.0-file-outside-link.js";
 
 export const embeddedMigrations: LoadedProjectMigration[] = [
   {
@@ -40,5 +41,11 @@ export const embeddedMigrations: LoadedProjectMigration[] = [
       "19efb65be0acadaf2f1a30da426e86ac80530eb505a909a4dd1099f96b613852",
     ],
     sourcePath: "embedded:4.0.0-git-aware.ts",
+  },
+  {
+    ...migration5_0_0_file_outside_link,
+    checksum:
+      "9220f11550b6703335e1c1ec076902a16373361692501afd8b707e158555c952",
+    sourcePath: "embedded:5.0.0-file-outside-link.ts",
   },
 ].sort((a, b) => a.version.localeCompare(b.version));
