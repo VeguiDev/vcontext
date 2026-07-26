@@ -58,7 +58,7 @@ after(async () => {
 });
 
 describe("daemon /mcp HTTP smoke test", () => {
-  it("returns all 48 tools for an authenticated request", async () => {
+  it("returns all 56 tools for an authenticated request", async () => {
     assert.ok(fixture);
     assert.ok(sessionId);
 
@@ -81,7 +81,7 @@ describe("daemon /mcp HTTP smoke test", () => {
     assert.ok(typeof result === "object" && result !== null);
     const tools = "tools" in result ? result.tools : undefined;
     assert.ok(Array.isArray(tools));
-    assert.equal(tools.length, 48);
+    assert.equal(tools.length, 56);
   });
 
   it("rejects a request without the bearer token", async () => {

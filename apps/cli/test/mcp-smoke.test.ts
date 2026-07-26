@@ -54,7 +54,7 @@ describe("vcontext mcp stdio smoke test", () => {
     });
   });
 
-  it("returns all 48 tools from the compiled CLI", () => {
+  it("returns all 56 tools from the compiled CLI", () => {
     assert.ok(fixture);
 
     const stdout = execFileSync(process.execPath, [CLI_ENTRY, "mcp"], {
@@ -71,6 +71,6 @@ describe("vcontext mcp stdio smoke test", () => {
     assert.ok(typeof result === "object" && result !== null);
     const tools = "tools" in result ? result.tools : undefined;
     assert.ok(Array.isArray(tools));
-    assert.equal(tools.length, 48);
+    assert.equal(tools.length, 56);
   });
 });
