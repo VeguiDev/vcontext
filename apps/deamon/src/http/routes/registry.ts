@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { AppServices } from "../../app.js";
@@ -91,7 +92,89 @@ export function registerRegistryRoutes(app: Hono, services: AppServices) {
     }
 
     return c.json({
-      linked: services.registry.link(project.id, linkedProject.id),
+      linked: services.registry.link(
+        project.id,
+        linkedProject.id,
+        body.branch_name,
+        body.snapshot_id,
+      ),
     });
+  });
+
+  app.delete("/projects/:slug/links", async (c) => {
+    const slug = c.req.param("slug");
+    const body = LinkProjectSchema.parse(await c.req.json());
+    const project = services.registry.findBySlug(slug);
+    const linkedProject = services.registry.findBySlug(body.project_b_slug);
+
+    if (!project || !linkedProject) {
+      return c.json({ error: "project_not_found" }, 404);
+    }
+
+    return c.json({
+      unlinked: services.registry.unlink(
+        project.id,
+        linkedProject.id,
+        body.branch_name,
+        body.snapshot_id,
+      ),
+    });
+  });
+
+  app.delete("/projects/:slug/links/all", async (c) => {
+    const slug = c.req.param("slug");
+    const body = z.object({ project_b_slug: z.string().min(1) }).strict().parse(await c.req.json());
+    const project = services.registry.findBySlug(slug);
+    const linkedProject = services.registry.findBySlug(body.project_b_slug);
+
+    if (!project || !linkedProject) {
+      return c.json({ error: "project_not_found" }, 404);
+    }
+
+    return c.json({
+      unlinked: services.registry.unlinkAll(project.id, linkedProject.id),
+    });
+  });
+
+  app.get("/projects/:slug/file-content", async (c) => {
+    const slug = c.req.param("slug");
+    const filePath = z.string().min(1).parse(c.req.query("path"));
+    const branch = z.string().min(1).parse(c.req.query("branch"));
+
+    if (filePath.includes("..") || filePath.startsWith("/")) {
+      return c.json({ error: "invalid_path" }, 400);
+    }
+
+    const paths = services.registry.paths(slug);
+
+    if (!paths) {
+      return c.json({ error: "project_not_found" }, 404);
+    }
+
+    const local =
+      paths.find(
+        (entry) => entry.type === "local" && entry.label === "workspace",
+      ) ?? paths.find((entry) => entry.type === "local");
+
+    if (!local) {
+      return c.json({ error: "no_local_path" }, 400);
+    }
+
+    try {
+      const content = execFileSync(
+        "git",
+        ["show", `${branch}:${filePath}`],
+        {
+          cwd: local.path,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        },
+      );
+      return c.text(content, 200, {
+        "Content-Type": "text/plain; charset=utf-8",
+      });
+    } catch {
+      return c.json({ error: "file_not_found" }, 404);
+    }
   });
 }

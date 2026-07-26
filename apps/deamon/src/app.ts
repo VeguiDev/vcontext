@@ -5,6 +5,7 @@ import { registerChangeRoutes } from "./http/routes/changes.js";
 import { registerDaemonRoutes } from "./http/routes/daemon.js";
 import { registerDocumentRoutes } from "./http/routes/documents.js";
 import { registerFileContextRoutes } from "./http/routes/file-context.js";
+import { registerFileOutsideLinkRoutes } from "./http/routes/file-outside-link.js";
 import { registerLeaseRoutes } from "./http/routes/leases.js";
 import { registerMigrationRoutes } from "./http/routes/migrations.js";
 import { registerMcpRoutes } from "./http/routes/mcp.js";
@@ -27,6 +28,9 @@ import { VContextSyncError } from "@vcontext/versioning-contract";
 import type { SyncService } from "./sync/sync-service.js";
 import type { GitObservationService } from "./git/git-observation-service.js";
 import { registerGitRoutes } from "./http/routes/git.js";
+import { CloudProjectLinkService, type CloudAuthorizationService } from "./cloud/project-link-service.js";
+import { registerCloudProjectLinkRoutes } from "./http/routes/cloud-project-links.js";
+import { AutoLinkPushHook } from "./sync/auto-link-push.js";
 
 export interface AppServices {
   registry: RegistryStore;
@@ -43,11 +47,26 @@ export interface AppServices {
     activeLeases: number;
     lastActivityAt: number;
   };
+  cloudLinkService?: CloudProjectLinkService;
+  autoLinkHook?: AutoLinkPushHook;
+  cloudAuth?: CloudAuthorizationService;
 }
 
 export function createApp(services: AppServices) {
   const app = new Hono();
   services.application ??= new ProjectApplicationService(
+    services.projectService,
+  );
+  services.cloudLinkService ??= new CloudProjectLinkService(
+    services.registry,
+    services.cloudAuth ?? {
+      async getProjectPermission() {
+        return { role: "OWNER", userId: "system" };
+      },
+    },
+  );
+  services.autoLinkHook ??= new AutoLinkPushHook(
+    services.cloudLinkService,
     services.projectService,
   );
 
@@ -126,11 +145,13 @@ export function createApp(services: AppServices) {
   registerChangeRoutes(app, services);
   registerTaskRoutes(app, services);
   registerFileContextRoutes(app, services);
+  registerFileOutsideLinkRoutes(app, services);
   registerVersioningRoutes(app, services);
   registerSyncRoutes(app, services);
   registerGitRoutes(app, services);
   registerMcpRoutes(app, services);
   registerLeaseRoutes(app, services);
+  registerCloudProjectLinkRoutes(app, services.cloudLinkService!);
 
   return app;
 }
