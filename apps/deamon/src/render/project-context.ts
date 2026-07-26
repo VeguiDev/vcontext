@@ -17,6 +17,7 @@ export function renderProjectContext(
       (task) => task.status !== "COMPLETED" && task.status !== "CANCELLED",
     );
   const pathContexts = branch.fileContext.find();
+  const outsideLinks = branch.fileOutsideLink.find();
 
   return [
     `Project: ${project.project.name}`,
@@ -92,5 +93,26 @@ export function renderProjectContext(
             (entry) => `- [${entry.kind}] ${entry.path}: ${entry.description}`,
           )
           .join("\n"),
+    ...(outsideLinks.length === 0
+      ? []
+      : [
+          "Outside links:",
+          outsideLinks
+            .map((link) => {
+              const sourcePath = link.source_file_context_id
+                ? pathContexts.find(
+                    (pc) => pc.record_id === link.source_file_context_id,
+                  )?.path ?? "?"
+                : "?";
+              const target =
+                link.target_project_slug ?? link.target_path ?? "?";
+              const desc = compact
+                ? link.description.trim().slice(0, 80) +
+                  (link.description.length > 80 ? "..." : "")
+                : link.description.trim();
+              return `- [→ ${link.target_type}] ${sourcePath} → ${target}: ${desc} (${link.kind})`;
+            })
+            .join("\n"),
+        ]),
   ].join("\n");
 }
