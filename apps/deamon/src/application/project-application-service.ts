@@ -248,6 +248,146 @@ export class ProjectApplicationService {
     return record;
   }
 
+  async listOutsideLinks(
+    locator: ProjectLocator,
+    selector: ReadSelector = {},
+  ) {
+    return this.withStore(locator, (store) => {
+      return this.readEntity(store, "file_outside_link", selector).find();
+    });
+  }
+
+  async getOutsideLink(
+    locator: ProjectLocator,
+    recordId: string,
+    selector: ReadSelector = {},
+  ) {
+    return this.withStore(locator, (store) => {
+      const record = this.readEntity(
+        store,
+        "file_outside_link",
+        selector,
+      ).findByRecordId(recordId);
+      if (!record) {
+        throw new ApplicationError(
+          "RECORD_NOT_FOUND",
+          `file_outside_link record "${recordId}" not found`,
+        );
+      }
+      return record;
+    });
+  }
+
+  async createOutsideLink(
+    locator: ProjectLocator,
+    input: EntityCreateInputMap["file_outside_link"],
+    selector: WriteSelector = {},
+  ) {
+    return this.withStore(locator, (store) => {
+      const branch = selector.branch ?? store.current_branch;
+      return store.createEntity(branch, "file_outside_link", input, {
+        message: selector.message,
+      });
+    });
+  }
+
+  async updateOutsideLink(
+    locator: ProjectLocator,
+    recordId: string,
+    input: EntityUpdateInputMap["file_outside_link"],
+    selector: WriteSelector = {},
+  ) {
+    if (
+      Object.values(input as Record<string, unknown>).every(
+        (v) => v === undefined,
+      )
+    ) {
+      throw new ApplicationError(
+        "VALIDATION_ERROR",
+        "At least one update field is required",
+      );
+    }
+    return this.withStore(locator, (store) => {
+      const branch = selector.branch ?? store.current_branch;
+      const record = store.updateEntity(
+        branch,
+        "file_outside_link",
+        recordId,
+        input,
+        { message: selector.message },
+      );
+      if (!record) {
+        throw new ApplicationError(
+          "RECORD_NOT_FOUND",
+          `file_outside_link record "${recordId}" not found`,
+        );
+      }
+      return record;
+    });
+  }
+
+  async deleteOutsideLink(
+    locator: ProjectLocator,
+    recordId: string,
+    selector: WriteSelector = {},
+  ) {
+    return this.withStore(locator, (store) => {
+      const branch = selector.branch ?? store.current_branch;
+      if (
+        !store.deleteEntity(branch, "file_outside_link", recordId, {
+          message: selector.message,
+        })
+      ) {
+        throw new ApplicationError(
+          "RECORD_NOT_FOUND",
+          `file_outside_link record "${recordId}" not found`,
+        );
+      }
+      return { deleted: true };
+    });
+  }
+
+  async getOutsideLinksBySource(
+    locator: ProjectLocator,
+    fileContextRecordId: string,
+    selector: ReadSelector = {},
+  ) {
+    return this.withStore(locator, (store) => {
+      const records = this.readEntity(
+        store,
+        "file_outside_link",
+        selector,
+      ).find() as Array<{ source_file_context_id: string | null }>;
+      return records.filter(
+        (r) => r.source_file_context_id === fileContextRecordId,
+      );
+    });
+  }
+
+  async historyOutsideLink(
+    locator: ProjectLocator,
+    recordId: string,
+    selector: ReadSelector = {},
+  ) {
+    return this.withStore(locator, (store) => {
+      const revisions = this.readEntity(
+        store,
+        "file_outside_link",
+        selector,
+      ).history(recordId);
+      if (revisions.length === 0) {
+        throw new ApplicationError(
+          "RECORD_NOT_FOUND",
+          `file_outside_link record "${recordId}" not found`,
+        );
+      }
+      return revisions.sort(
+        (left, right) =>
+          left.updated_at - right.updated_at || left.id.localeCompare(right.id),
+      );
+    });
+  }
+
   async branches(locator: ProjectLocator) {
     return this.withStore(locator, (store) => store.branches.find());
   }
@@ -545,7 +685,9 @@ export class ProjectApplicationService {
         ? "change"
         : entityType === "file_context"
           ? "fileContext"
-          : entityType;
+          : entityType === "file_outside_link"
+            ? "fileOutsideLink"
+            : entityType;
   }
 
   private selectSnapshot(store: ProjectStore, selector: ReadSelector) {

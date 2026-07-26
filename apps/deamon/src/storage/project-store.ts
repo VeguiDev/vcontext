@@ -19,6 +19,9 @@ import type {
   EntityType,
   FileContextKind,
   FileContextRecord,
+  FileOutsideLinkKind,
+  FileOutsideLinkRecord,
+  FileOutsideLinkTargetType,
   MergeApplyResult,
   MergeChange,
   MergeConflict,
@@ -56,6 +59,16 @@ export type EntityCreateInputMap = {
     hash?: string;
     description: string;
   };
+  file_outside_link: {
+    source_file_context_id?: string | null;
+    target_project_slug: string;
+    target_path?: string | null;
+    target_type?: FileOutsideLinkTargetType;
+    target_branch_name?: string | null;
+    target_snapshot_id?: string | null;
+    kind?: FileOutsideLinkKind;
+    description: string;
+  };
 };
 
 export type EntityUpdateInputMap = {
@@ -73,6 +86,16 @@ export type EntityUpdateInputMap = {
     kind?: FileContextKind;
     filename?: string;
     hash?: string;
+    description?: string;
+  };
+  file_outside_link: {
+    source_file_context_id?: string | null;
+    target_project_slug?: string;
+    target_path?: string | null;
+    target_type?: FileOutsideLinkTargetType;
+    target_branch_name?: string | null;
+    target_snapshot_id?: string | null;
+    kind?: FileOutsideLinkKind;
     description?: string;
   };
 };
@@ -596,6 +619,7 @@ export class ProjectSnapshotStore {
   readonly change: VersionedReadStore<"change_note">;
   readonly task: TaskReadStore;
   readonly fileContext: VersionedReadStore<"file_context">;
+  readonly fileOutsideLink: FileOutsideLinkSnapshotStore;
 
   constructor(
     readonly projectStore: ProjectStore,
@@ -622,6 +646,11 @@ export class ProjectSnapshotStore {
       snapshot_id,
       "file_context",
     );
+    this.fileOutsideLink = new FileOutsideLinkSnapshotStore(
+      projectStore,
+      snapshot_id,
+      "file_outside_link",
+    );
   }
 }
 
@@ -631,6 +660,7 @@ export class ProjectBranchStore {
   readonly change: VersionedBranchEntityStore<"change_note">;
   readonly task: TaskBranchStore;
   readonly fileContext: FileContextBranchStore;
+  readonly fileOutsideLink: FileOutsideLinkBranchStore;
 
   constructor(
     readonly projectStore: ProjectStore,
@@ -654,6 +684,10 @@ export class ProjectBranchStore {
     );
     this.task = new TaskBranchStore(projectStore, name);
     this.fileContext = new FileContextBranchStore(projectStore, name);
+    this.fileOutsideLink = new FileOutsideLinkBranchStore(
+      projectStore,
+      name,
+    );
   }
 
   get snapshot_id() {
@@ -936,6 +970,118 @@ export class FileContextBranchStore extends VersionedReadStore<"file_context"> {
       "file_context",
       recordId,
       options,
+    );
+  }
+}
+
+export class FileOutsideLinkSnapshotStore extends VersionedReadStore<"file_outside_link"> {
+  find(options?: { snapshot_id: string }): FileOutsideLinkRecord[] {
+    const snapshotId = options?.snapshot_id ?? this.snapshotId;
+    if (snapshotId === null) return [];
+    return sortRecords(
+      "file_outside_link",
+      this.store.resolver.resolve(snapshotId, "file_outside_link"),
+    ) as FileOutsideLinkRecord[];
+  }
+
+  findByRecordId(
+    recordId: string,
+    options?: { snapshot_id: string },
+  ): FileOutsideLinkRecord | null {
+    const snapshotId = options?.snapshot_id ?? this.snapshotId;
+    if (snapshotId === null) return null;
+    return this.store.resolver.findByRecordId(
+      snapshotId,
+      "file_outside_link",
+      recordId,
+    ) as FileOutsideLinkRecord | null;
+  }
+}
+
+export class FileOutsideLinkBranchStore extends FileOutsideLinkSnapshotStore {
+  constructor(
+    store: ProjectStore,
+    readonly branchName: string,
+  ) {
+    super(store, store.requireBranch(branchName).snapshot_id, "file_outside_link");
+  }
+
+  private currentSnapshotId() {
+    return this.store.requireBranch(this.branchName).snapshot_id;
+  }
+
+  override find() {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return [];
+    return sortRecords(
+      "file_outside_link",
+      this.store.resolver.resolve(snapshotId, "file_outside_link"),
+    );
+  }
+
+  override findByRecordId(recordId: string) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return null;
+    return this.store.resolver.findByRecordId(
+      snapshotId,
+      "file_outside_link",
+      recordId,
+    );
+  }
+
+  override history(recordId: string) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return [];
+    return this.store.resolver.history(
+      snapshotId,
+      "file_outside_link",
+      recordId,
+    );
+  }
+
+  create(
+    input: EntityCreateInputMap["file_outside_link"],
+    options?: SnapshotOptions,
+  ) {
+    return this.store.createEntity(
+      this.branchName,
+      "file_outside_link",
+      input,
+      options,
+    );
+  }
+
+  update(
+    recordId: string,
+    input: EntityUpdateInputMap["file_outside_link"],
+    options?: SnapshotOptions,
+  ) {
+    return this.store.updateEntity(
+      this.branchName,
+      "file_outside_link",
+      recordId,
+      input,
+      options,
+    );
+  }
+
+  delete(recordId: string, options?: SnapshotOptions) {
+    return this.store.deleteEntity(
+      this.branchName,
+      "file_outside_link",
+      recordId,
+      options,
+    );
+  }
+
+  findBySourceFileContext(fileContextRecordId: string) {
+    const snapshotId = this.currentSnapshotId();
+    if (snapshotId === null) return [];
+    return (this.store.resolver.resolve(
+      snapshotId,
+      "file_outside_link",
+    ) as FileOutsideLinkRecord[]).filter(
+      (r) => r.source_file_context_id === fileContextRecordId,
     );
   }
 }
@@ -1518,6 +1664,15 @@ function normalizeCreate<T extends EntityType>(
     value.filename ??= nameFromPath(String(value.path));
     value.hash ??= "";
   }
+  if (entityType === "file_outside_link") {
+    value.target_type ??= "file";
+    value.kind ??= "import";
+    value.source_file_context_id ??= null;
+    value.target_path ??= null;
+    value.target_branch_name ??= null;
+    value.target_snapshot_id ??= null;
+    value.target_project_slug ??= null;
+  }
   return value;
 }
 
@@ -1578,6 +1733,7 @@ function defaultMessage(
     change_note: "change note",
     task: "task",
     file_context: "file context",
+    file_outside_link: "file outside link",
   };
   const identity =
     entityType === "document" || entityType === "task"
@@ -1586,7 +1742,9 @@ function defaultMessage(
         ? data.path
         : entityType === "change_note"
           ? data.note
-          : data.prompt;
+          : entityType === "file_outside_link"
+            ? data.description
+            : data.prompt;
   const suffix =
     typeof identity === "string" && identity.length > 0 ? ` "${identity}"` : "";
   return `${action} ${labels[entityType]}${suffix}`;

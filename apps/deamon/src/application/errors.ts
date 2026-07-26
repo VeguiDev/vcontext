@@ -6,7 +6,10 @@ export type ApplicationErrorCode =
   | "VALIDATION_ERROR"
   | "MERGE_CONFLICT"
   | "MIGRATION_ERROR"
-  | "DATABASE_ERROR";
+  | "DATABASE_ERROR"
+  | "FORBIDDEN"
+  | "UNAUTHORIZED"
+  | "CONFLICT";
 
 export class ApplicationError extends Error {
   constructor(
@@ -29,4 +32,7 @@ export const applicationErrorStatus: Record<ApplicationErrorCode, number> = {
   MERGE_CONFLICT: 409,
   MIGRATION_ERROR: 409,
   DATABASE_ERROR: 500,
+  FORBIDDEN: 403,
+  UNAUTHORIZED: 401,
+  CONFLICT: 409,
 };
