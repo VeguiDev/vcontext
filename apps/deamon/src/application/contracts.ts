@@ -14,11 +14,27 @@ export interface ProjectLocator {
 export interface ReadSelector {
   branch?: string;
   snapshot_id?: string;
+  fileOutsideLink?: {
+    target_project_slug?: string;
+    kind?: string;
+    target_type?: string;
+    source_file_context_id?: string;
+  };
 }
 
 export interface WriteSelector {
   branch?: string;
   message?: string | null;
+  fileOutsideLink?: {
+    target_project_slug?: string;
+    target_type?: string;
+    kind?: string;
+    description?: string;
+    source_file_context_id?: string | null;
+    target_path?: string | null;
+    target_branch_name?: string | null;
+    target_snapshot_id?: string | null;
+  };
 }
 
 export interface ProjectStatus {

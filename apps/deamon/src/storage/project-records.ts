@@ -2,6 +2,16 @@ export type TaskStatus = "BACKLOG" | "RUNNING" | "COMPLETED" | "CANCELLED";
 
 export type FileContextKind = "file" | "directory" | "path";
 
+export type FileOutsideLinkKind =
+  | "lib"
+  | "sdk"
+  | "api"
+  | "dependency"
+  | "external_call"
+  | "import";
+
+export type FileOutsideLinkTargetType = "file" | "directory" | "project";
+
 export interface VersionedRecord {
   id: string;
   record_id: string;
@@ -39,6 +49,17 @@ export interface FileContextRecord extends VersionedRecord {
   filename: string;
   path: string;
   hash: string;
+  description: string;
+}
+
+export interface FileOutsideLinkRecord extends VersionedRecord {
+  source_file_context_id: string | null;
+  target_project_slug: string;
+  target_path: string | null;
+  target_type: FileOutsideLinkTargetType;
+  target_branch_name: string | null;
+  target_snapshot_id: string | null;
+  kind: FileOutsideLinkKind;
   description: string;
 }
 
@@ -116,7 +137,8 @@ export type EntityType =
   | "document"
   | "change_note"
   | "task"
-  | "file_context";
+  | "file_context"
+  | "file_outside_link";
 
 export interface SnapshotOptions {
   message?: string | null;

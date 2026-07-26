@@ -4,6 +4,7 @@ import type {
   DocumentRecord,
   EntityType,
   FileContextRecord,
+  FileOutsideLinkRecord,
   ProjectPromptRecord,
   TaskRecord,
   VersionedRecord,
@@ -15,6 +16,7 @@ export type EntityRecordMap = {
   change_note: ChangeRecord;
   task: TaskRecord;
   file_context: FileContextRecord;
+  file_outside_link: FileOutsideLinkRecord;
 };
 
 export const ENTITY_TYPES: EntityType[] = [
@@ -23,6 +25,7 @@ export const ENTITY_TYPES: EntityType[] = [
   "change_note",
   "task",
   "file_context",
+  "file_outside_link",
 ];
 
 export const ENTITY_FIELDS: Record<EntityType, string[]> = {
@@ -31,6 +34,16 @@ export const ENTITY_FIELDS: Record<EntityType, string[]> = {
   change_note: ["note", "document_id"],
   task: ["title", "description", "document_id", "status"],
   file_context: ["kind", "filename", "path", "hash", "description"],
+  file_outside_link: [
+    "source_file_context_id",
+    "target_project_slug",
+    "target_path",
+    "target_type",
+    "target_branch_name",
+    "target_snapshot_id",
+    "kind",
+    "description",
+  ],
 };
 
 const ANCESTRY_CTE = `

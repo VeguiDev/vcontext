@@ -16,6 +16,7 @@ export const ENTITY_TYPES = [
   "change_note",
   "task",
   "file_context",
+  "file_outside_link",
 ] as const;
 
 export type EntityType = (typeof ENTITY_TYPES)[number];
@@ -51,3 +52,6 @@ export const SYNC_V2_LIMITS = Object.freeze({
   }),
   continuation_ttl_seconds: 15 * 60,
 } as const);
+
+export const DEFAULT_COMPACT_PROMPT_TEMPLATE =
+  "Para cada documento: escribí una descripción corta (1 oración), su responsabilidad principal, importancia (ALTA/MEDIA/BAJA), y decisiones de diseño clave. Para cada descriptor de archivo: escribí qué hace, su responsabilidad, importancia, y decisiones. Máximo 200 caracteres por entrada. Priorizá información accionable sobre contexto genérico." as const;
