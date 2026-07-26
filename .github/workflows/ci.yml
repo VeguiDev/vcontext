@@ -4,7 +4,11 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - "apps/landing/**"
   pull_request:
+    paths-ignore:
+      - "apps/landing/**"
 
 permissions:
   contents: read
