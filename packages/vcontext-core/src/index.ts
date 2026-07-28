@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 export { IdentityStore, type LocalIdentity } from "./identity.js";
+export { type WellKnownConfig, WellKnownError, resolveWellKnown } from "./well-known.js";
 
 export const VCONTEXT_HOME =
   process.env.VCONTEXT_HOME ?? path.join(os.homedir(), ".vcontext");
