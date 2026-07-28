@@ -1,5 +1,5 @@
 {
-  "name": "vcontext",
+  "name": "vcontext-monorepo",
   "private": true,
   "scripts": {
     "build": "turbo run build",

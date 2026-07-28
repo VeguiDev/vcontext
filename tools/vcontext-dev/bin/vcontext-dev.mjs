@@ -78,7 +78,7 @@ export async function main(args = process.argv.slice(2)) {
     "turbo",
     "run",
     "build",
-    "--filter=@app/cli...",
+    "--filter=vcontext...",
     "--filter=@app/deamon...",
   ]);
 

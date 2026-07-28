@@ -119,7 +119,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build workspace dependencies
-        run: pnpm turbo run build --filter=@app/cli...
+        run: pnpm turbo run build --filter=vcontext...
 
       - name: Build standalone executable
         env:
