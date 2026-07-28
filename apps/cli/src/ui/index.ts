@@ -221,6 +221,21 @@ export class CliUi {
     return `${this.commandName} ${command}`;
   }
 
+  async textInput(
+    message: string,
+    options?: { placeholder?: string; defaultValue?: string },
+  ): Promise<string> {
+    if (!this.isTTY || this.options.json || this.options.quiet) {
+      return options?.defaultValue ?? "";
+    }
+    const result = await this.prompts.text({
+      message,
+      placeholder: options?.placeholder,
+      defaultValue: options?.defaultValue,
+    });
+    return this.promptResult(result);
+  }
+
   async confirm(question: string, defaultValue = false): Promise<boolean> {
     if (!this.isTTY || this.options.json || this.options.quiet) return false;
     const result = await this.prompts.confirm({

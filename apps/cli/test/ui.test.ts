@@ -297,6 +297,10 @@ test("interactive prompts delegate typed selections and confirmation defaults", 
       calls.push({ kind: "select", ...options });
       return options.options[1]!.value;
     },
+    async text(options) {
+      calls.push({ kind: "text", ...options });
+      return options.defaultValue ?? "test";
+    },
   };
   const output = { isTTY: true, write() {} };
   const ui = configureUi(
@@ -341,6 +345,9 @@ test("Ctrl+C from any prompt becomes a clean exit-code 130 error", async () => {
       return PROMPT_CANCELLED;
     },
     async select() {
+      return PROMPT_CANCELLED;
+    },
+    async text() {
       return PROMPT_CANCELLED;
     },
   };

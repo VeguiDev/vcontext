@@ -3,6 +3,7 @@ import {
   confirm as clackConfirm,
   isCancel,
   select as clackSelect,
+  text as clackText,
   type Option,
 } from "@clack/prompts";
 
@@ -24,6 +25,11 @@ export interface CliPromptAdapter {
     message: string;
     options: readonly PromptSelectOption<T>[];
   }): Promise<T | PromptCancelled>;
+  text(options: {
+    message: string;
+    placeholder?: string;
+    defaultValue?: string;
+  }): Promise<string | PromptCancelled>;
 }
 
 export class ClackPromptAdapter implements CliPromptAdapter {
@@ -51,6 +57,21 @@ export class ClackPromptAdapter implements CliPromptAdapter {
     const result = await clackSelect<T>({
       message: options.message,
       options: [...options.options] as Option<T>[],
+      input: this.input,
+      output: this.output,
+    });
+    return isCancel(result) ? PROMPT_CANCELLED : result;
+  }
+
+  async text(options: {
+    message: string;
+    placeholder?: string;
+    defaultValue?: string;
+  }): Promise<string | PromptCancelled> {
+    const result = await clackText({
+      message: options.message,
+      placeholder: options.placeholder,
+      defaultValue: options.defaultValue,
       input: this.input,
       output: this.output,
     });
