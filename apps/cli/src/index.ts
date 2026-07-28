@@ -45,7 +45,7 @@ import {
   startAutomaticUpdateCheck,
 } from "./update/automatic.js";
 import { DEFAULT_COMPACT_PROMPT_TEMPLATE } from "@vcontext/versioning-contract";
-import { VCONTEXT_VERSION } from "./version.js";
+import { VCONTEXT_DISTRIBUTION, VCONTEXT_VERSION } from "./version.js";
 import {
   renderBranch,
   renderBranches,
@@ -1422,7 +1422,7 @@ async function mcpServe() {
 }
 
 function version() {
-  getUi().line(VCONTEXT_VERSION);
+  getUi().line(`${VCONTEXT_VERSION} (${VCONTEXT_DISTRIBUTION})`);
 }
 
 function usage(command?: string) {

@@ -80,7 +80,10 @@ async function main() {
     const result = await Bun.build({
       entrypoints: ["apps/cli/src/standalone.ts"],
       compile: { ...(target ? { target } : {}), outfile },
-      define: { VCONTEXT_VERSION_BUILD: JSON.stringify(releaseVersion) },
+      define: {
+        VCONTEXT_VERSION_BUILD: JSON.stringify(releaseVersion),
+        VCONTEXT_DISTRIBUTION_BUILD: JSON.stringify("standalone"),
+      },
       plugins: [standaloneDatabasePlugin],
       minify: false,
       sourcemap: "none",
