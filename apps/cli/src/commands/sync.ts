@@ -1,5 +1,10 @@
 import path from "node:path";
 import { DaemonClientError } from "@repo/daemon-client";
+import {
+  resolveWellKnown,
+  WellKnownError,
+  type WellKnownConfig,
+} from "@repo/vcontext-core";
 import { getUi } from "../ui/index.js";
 import {
   assertNoArgs,
@@ -34,10 +39,7 @@ export async function cloneCommand(
     input,
     "Usage: vcontext clone <url> [path|--path path] [--yes] [--json|--quiet]",
   );
-  const remoteUrl =
-    /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remoteInput)
-      ? new URL(`/${remoteInput}`, host).toString()
-      : remoteInput;
+  const remoteUrl = await resolveCloneRemoteUrl(remoteInput, host);
   const destination = path ?? takeOptionalPositional(input);
   assertNoArgs(
     input,
@@ -61,6 +63,74 @@ export async function cloneCommand(
     "Cloning project context",
   );
   emit(value, output, (result) => printSyncResult("Cloned", result));
+}
+
+/**
+ * Parse a vcontext.dev/c/<namespace>/<repo> short URL.
+ * Handles both `https://vcontext.dev/c/ns/repo` and bare `vcontext.dev/c/ns/repo`.
+ */
+function parseShortUrl(
+  input: string,
+): { url: string; namespace: string; repo: string } | null {
+  const normalized =
+    input.startsWith("https://") || input.startsWith("http://")
+      ? input
+      : `https://${input}`;
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.host === "vcontext.dev" && parsed.pathname.startsWith("/c/")) {
+      const parts = parsed.pathname.split("/");
+      if (parts.length >= 4 && parts[1] === "c") {
+        const namespace = decodeURIComponent(parts[2]!);
+        const repo = decodeURIComponent(parts[3]!);
+        return { url: normalized, namespace, repo };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a remote clone URL from user input.
+ *
+ * 4 cases:
+ *   1. `namespace/repo`          → prepend host
+ *   2. `vcontext.dev/c/ns/repo`  → extract ns/repo, resolve well-known, build sync URL
+ *   3. `https://...`             → attempt well-known discovery, pass through URL
+ *   4. everything else           → pass through unchanged
+ */
+async function resolveCloneRemoteUrl(
+  remoteInput: string,
+  host: string,
+): Promise<string> {
+  // Case 1: namespace/repo slug pattern — prepend host
+  if (
+    /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remoteInput)
+  ) {
+    return new URL(`/${remoteInput}`, host).toString();
+  }
+
+  // Case 2: Short URL (vcontext.dev/c/ns/repo)
+  const short = parseShortUrl(remoteInput);
+  if (short) {
+    const wellKnown = await resolveWellKnown(short.url);
+    return `${wellKnown.services.sync}/${short.namespace}/${short.repo}`;
+  }
+
+  // Case 3: Generic HTTPS URL — well-known for auth discovery
+  if (remoteInput.startsWith("https://")) {
+    try {
+      await resolveWellKnown(remoteInput);
+    } catch {
+      // Well-known resolution is informational; still use the input URL
+    }
+    return remoteInput;
+  }
+
+  // Case 4: Pass through unchanged
+  return remoteInput;
 }
 
 function resolveCloneDestination(
