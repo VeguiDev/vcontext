@@ -17,7 +17,7 @@ import {
 } from "@repo/vcontext-core";
 import { buildMcp } from "@repo/vcontext-mcp";
 import { acquireLease, releaseLease, startHeartbeat } from "./lease.js";
-import { gitRemoteUrl } from "./runtime/git.js";
+import { gitRemoteUrl, ReadOnlyGitService } from "./runtime/git.js";
 import { writeProjectMarker } from "./runtime/project-marker.js";
 import { CLIVContextAPI } from "./vcontext-api.js";
 import { authCommand } from "./commands/auth.js";
@@ -384,7 +384,8 @@ async function diffCommand(input: string[]) {
 }
 
 async function branchCommand(input: string[]) {
-  const subcommand = input.shift();
+  let subcommand = input.shift();
+  if (subcommand === undefined) subcommand = "current";
   const output = outputOptions(input);
   if (subcommand === "list" || subcommand === "current") {
     const slug = await resolveProjectSlug(input);
@@ -415,20 +416,29 @@ async function branchCommand(input: string[]) {
       "Usage: vcontext branch <list|current|show|create|checkout|rename|delete>",
       2,
     );
+  const keepCurrent = takeFlag(input, "--keep-current") || takeFlag(input, "-k");
   const newName = takeOption(input, "--new-name");
   const from = takeOption(input, "--from");
   const target = await resolveRightTarget(input);
   if (subcommand === "delete")
     await confirmDestructive("Delete branch", getUi().options.yes);
-  if (subcommand === "create")
-    return emit(
-      await requestValue("POST", `/projects/${target.slug}/branches`, {
+  if (subcommand === "create") {
+    const created = await requestValue(
+      "POST",
+      `/projects/${target.slug}/branches`,
+      {
         name: target.value,
         from,
-      }),
-      output,
-      (value) => renderBranch(value, getUi(), "create"),
+      },
     );
+    if (!keepCurrent) {
+      await requestValue(
+        "POST",
+        `/projects/${target.slug}/branches/${encodeURIComponent(target.value)}/checkout`,
+      );
+    }
+    return emit(created, output, (value) => renderBranch(value, getUi(), "create"));
+  }
   const route = `/projects/${target.slug}/branches/${encodeURIComponent(target.value)}`;
   const response =
     subcommand === "show"
@@ -988,6 +998,30 @@ async function init(input: string[]) {
     // Best-effort: prompt seeding must not fail project init
   }
 
+  // Detect git branch and offer to create a matching vcontext branch
+  try {
+    const gitService = new ReadOnlyGitService(localPath);
+    const gitBranch = gitService.branch();
+    if (gitBranch && getUi().isTTY) {
+      const createIt = await getUi().confirm(
+        `Create vcontext branch '${gitBranch}'?`,
+        true,
+      );
+      if (createIt) {
+        const slug = initialized.slug as string | undefined;
+        if (slug) {
+          await requestValue("POST", `/projects/${slug}/branches`, {
+            name: gitBranch,
+            from: undefined,
+          });
+          getUi().success(`Branch '${gitBranch}' created`);
+        }
+      }
+    }
+  } catch {
+    // Best-effort: branch detection must not fail project init
+  }
+
   const hooks = ensureProjectHooks(localPath);
   const mcp = await setupCommand(setupInput, {
     cwd: localPath,
@@ -1427,7 +1461,7 @@ function usage(command?: string) {
       title: "Versioning",
       commands: [
         [
-          "branch <list|current|show|create|checkout|rename|delete>",
+          "branch [list|current|show|create|checkout|rename|delete]",
           "Manage branches",
         ],
         ["snapshot <list|show|diff|checkout>", "Inspect snapshots"],
@@ -1440,7 +1474,7 @@ function usage(command?: string) {
       title: "Cloud & sync",
       commands: [
         ["auth <login|logout|status>", "Manage Cloud authentication"],
-        ["identity <show|set>", "Manage Cloud identity"],
+        ["identity [show|set]", "Manage Cloud identity (interactive by default)"],
         ["remote <add|list|get-url|set-url|remove>", "Manage remotes"],
         ["clone <url> [path]", "Clone shared context"],
         ["fetch [remote] [branch]", "Fetch remote context"],
