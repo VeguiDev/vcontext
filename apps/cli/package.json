@@ -55,7 +55,7 @@
     "better-sqlite3": "^12.10.0",
     "boxen": "^8.0.1",
     "fast-glob": "^3.3.3",
-    "hono": "^4.12.18",
+    "hono": "^4.12.34",
     "jsonc-parser": "^3.3.1",
     "ora": "^9.4.1",
     "picocolors": "^1.1.1",

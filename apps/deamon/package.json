@@ -15,7 +15,7 @@
     "@repo/vcontext-mcp": "workspace:^",
     "better-sqlite3": "^12.10.0",
     "fast-glob": "^3.3.3",
-    "hono": "^4.12.18",
+    "hono": "^4.12.34",
     "slugify": "^1.6.9",
     "zod": "^4.4.3"
   },
