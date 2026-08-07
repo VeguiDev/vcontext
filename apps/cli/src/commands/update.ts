@@ -8,13 +8,18 @@ import {
   installUpdate,
   type InstallUpdateResult,
 } from "../update/installer.js";
-import { VCONTEXT_VERSION } from "../version.js";
+import {
+  checkForNpmUpdates,
+  type NpmUpdateStatus,
+} from "../update/npm-checker.js";
+import { VCONTEXT_DISTRIBUTION, VCONTEXT_VERSION } from "../version.js";
 
 export interface UpdateCommandDependencies {
   currentVersion?: string;
   standalone?: boolean;
   check?: () => Promise<UpdateStatus | null>;
   install?: (status: UpdateStatus) => Promise<InstallUpdateResult>;
+  npmCheck?: () => Promise<NpmUpdateStatus | null>;
 }
 
 export async function updateCommand(
@@ -30,6 +35,12 @@ export async function updateCommand(
   const currentVersion = dependencies.currentVersion ?? VCONTEXT_VERSION;
   const standalone =
     dependencies.standalone ?? process.env.VCONTEXT_STANDALONE === "1";
+  const distribution = VCONTEXT_DISTRIBUTION;
+
+  if (distribution === "npm") {
+    await handleNpmUpdate({ currentVersion, checkOnly, output, dependencies });
+    return;
+  }
 
   if (!checkOnly && !standalone) {
     throw new DaemonClientError(
@@ -150,6 +161,64 @@ export async function updateCommand(
       }
     },
   );
+}
+
+async function handleNpmUpdate({
+  currentVersion,
+  checkOnly,
+  output,
+  dependencies,
+}: {
+  currentVersion: string;
+  checkOnly: boolean;
+  output: ReturnType<typeof outputOptions>;
+  dependencies: UpdateCommandDependencies;
+}): Promise<void> {
+  if (checkOnly) {
+    const status = await getUi().run("Checking for updates", async () => {
+      try {
+        const result = await (dependencies.npmCheck?.() ??
+          checkForNpmUpdates(currentVersion));
+        return result;
+      } catch (error) {
+        throw updateError(
+          "UPDATE_CHECK_FAILED",
+          "Could not check for updates.",
+          "Check your internet connection and try again.",
+          error,
+        );
+      }
+    });
+    if (!status)
+      throw new DaemonClientError(
+        "Could not resolve the latest version.",
+        1,
+      );
+
+    const updateAvailable = status.updateType !== null;
+    const payload = {
+      currentVersion: status.current,
+      latestVersion: status.latest,
+      updateAvailable,
+    };
+    emit(payload, output, (_value, ui) =>
+      renderResult(
+        ui,
+        updateAvailable ? "Update available" : "vcontext is up to date",
+        [
+          ["Current", status.current],
+          ["Latest", status.latest],
+        ],
+      ),
+    );
+    return;
+  }
+
+  const ui = getUi();
+  if (!output.quiet) {
+    ui.note("To update vcontext, run:");
+    ui.line(ui.command("npm install -g vcontext@latest"));
+  }
 }
 
 export async function stopDaemonForUpdate(): Promise<void> {

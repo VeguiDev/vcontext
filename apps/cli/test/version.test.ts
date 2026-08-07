@@ -8,5 +8,6 @@ test("vcontext --version reports the release base version", () => {
     encoding: "utf8",
   }).trim();
 
-  assert.equal(version, "0.1.1");
+  // (source) is the fallback when VCONTEXT_DISTRIBUTION_BUILD is undefined
+  assert.equal(version, "0.1.1 (source)");
 });

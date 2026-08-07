@@ -149,12 +149,18 @@ requirement.
 
 ### Install command
 
-- Default to the Shell command.
-- Keep the PowerShell alternative.
+- Tab order: Shell | PowerShell | npm — always in this exact order.
+- Default to the Shell command (non-Windows) or PowerShell (Windows). npm is
+  manual-only and never auto-selected by OS detection.
 - Provide copy feedback through an `aria-live` region.
-- Commands must remain:
+- Keyboard navigation: ArrowLeft / ArrowRight cycle through tabs (wrapping);
+  Home selects the first tab; End selects the last tab.
+- Tab widget: one selected tab has `aria-selected=true` and `tabindex=0`;
+  unselected tabs have `tabindex=-1`.
+- Commands:
   - `curl -fsSL https://vcontext.dev/install.sh | bash`
   - `irm https://vcontext.dev/install.ps1 | iex`
+  - `npm install -g vcontext`
 
 ### Section headings
 
@@ -247,4 +253,8 @@ After a visual or component change:
 3. Confirm the root installer files and generated installer routes stay
    identical.
 4. Preserve keyboard focus, reduced-motion behavior, and responsive stacking.
-5. Do not deploy unless the user explicitly asks.
+5. Verify all three install tabs (Shell, PowerShell, npm) render, select, and
+   copy the correct command. npm must never be auto-selected by OS detection.
+6. Verify ArrowLeft/Right (wrapping), Home, and End cycle through all three
+   tabs and properly update `aria-selected` and `tabindex`.
+7. Do not deploy unless the user explicitly asks.

@@ -10,10 +10,11 @@ const { id = "hero-install", inverted = false } = Astro.props;
 <div class:list={["install-command", { "install-command--inverted": inverted }]} data-install-command>
   <div class="install-command__topline">
     <div class="install-tabs" role="tablist" aria-label="Installation shell">
-      <button type="button" role="tab" aria-selected="true" aria-controls={`${id}-command`} data-shell="shell">Shell</button>
-      <button type="button" role="tab" aria-selected="false" aria-controls={`${id}-command`} data-shell="powershell">PowerShell</button>
+      <button type="button" role="tab" aria-selected="true" tabindex="0" aria-controls={`${id}-command`} data-shell="shell">Shell</button>
+      <button type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls={`${id}-command`} data-shell="powershell">PowerShell</button>
+      <button type="button" role="tab" aria-selected="false" tabindex="-1" aria-controls={`${id}-command`} data-shell="npm">npm</button>
     </div>
-    <span class="install-command__hint">One line. That’s it.</span>
+    <span class="install-command__hint">One line. That's it.</span>
   </div>
   <div class="install-command__line">
     <span aria-hidden="true">$</span>
@@ -27,11 +28,12 @@ const { id = "hero-install", inverted = false } = Astro.props;
   const commands = {
     shell: "curl -fsSL https://vcontext.dev/install.sh | bash",
     powershell: "irm https://vcontext.dev/install.ps1 | iex",
+    npm: "npm install -g vcontext",
   };
 
   document.querySelectorAll<HTMLElement>("[data-install-command]").forEach((root) => {
     const output = root.querySelector<HTMLElement>("[data-command-value]");
-    const tabs = root.querySelectorAll<HTMLButtonElement>("[data-shell]");
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>("[data-shell]"));
     const copyButton = root.querySelector<HTMLButtonElement>("[data-copy-button]");
     const copyLabel = root.querySelector<HTMLElement>("[data-copy-label]");
     const status = root.querySelector<HTMLElement>("[data-copy-status]");
@@ -42,10 +44,49 @@ const { id = "hero-install", inverted = false } = Astro.props;
     const detectedShell: keyof typeof commands = /windows|win32|win64/i.test(detectedPlatform)
       ? "powershell"
       : "shell";
+
     const selectShell = (shell: keyof typeof commands) => {
       if (!output || !commands[shell]) return;
       output.textContent = commands[shell];
-      tabs.forEach((item) => item.setAttribute("aria-selected", String(item.dataset.shell === shell)));
+      tabs.forEach((tab) => {
+        const isSelected = tab.dataset.shell === shell;
+        tab.setAttribute("aria-selected", String(isSelected));
+        tab.tabIndex = isSelected ? 0 : -1;
+      });
+    };
+
+    const keydownHandler = (event: KeyboardEvent) => {
+      const current = tabs.findIndex(
+        (tab) => tab.getAttribute("aria-selected") === "true",
+      );
+      let next = current;
+
+      switch (event.key) {
+        case "ArrowRight":
+          event.preventDefault();
+          next = (current + 1) % tabs.length;
+          break;
+        case "ArrowLeft":
+          event.preventDefault();
+          next = (current - 1 + tabs.length) % tabs.length;
+          break;
+        case "Home":
+          event.preventDefault();
+          next = 0;
+          break;
+        case "End":
+          event.preventDefault();
+          next = tabs.length - 1;
+          break;
+        default:
+          return;
+      }
+
+      const shell = tabs[next]?.dataset.shell as keyof typeof commands | undefined;
+      if (shell) {
+        selectShell(shell);
+        tabs[next]?.focus();
+      }
     };
 
     selectShell(detectedShell);
@@ -53,7 +94,9 @@ const { id = "hero-install", inverted = false } = Astro.props;
       tab.addEventListener("click", () => {
         const shell = tab.dataset.shell as keyof typeof commands;
         selectShell(shell);
+        tab.focus();
       });
+      tab.addEventListener("keydown", keydownHandler);
     });
     copyButton?.addEventListener("click", async () => {
       const value = output?.textContent?.trim();

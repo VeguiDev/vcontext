@@ -27,6 +27,7 @@ jobs:
       version: ${{ steps.release-version.outputs.version }}
       tag: ${{ steps.release-version.outputs.tag }}
       prerelease: ${{ steps.release-version.outputs.prerelease }}
+      base-version: ${{ steps.release-version.outputs.base-version }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -172,6 +173,159 @@ jobs:
           path: release/assets/*
           if-no-files-found: error
           retention-days: 7
+
+  npm-package:
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      tarball-filename: ${{ steps.pack.outputs.tarball-filename }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build npm bundles
+        run: pnpm --filter vcontext run build:npm
+
+      - name: Pack and dry-run
+        id: pack
+        shell: bash
+        run: |
+          cd apps/cli
+          npm pack --json > pack-result.json
+          TARBALL=$(node -e "console.log(JSON.parse(require('node:fs').readFileSync('pack-result.json','utf8'))[0].filename)")
+          echo "tarball-filename=$TARBALL" >> "$GITHUB_OUTPUT"
+          npm publish --dry-run --json || echo "dry-run completed (expected for first publish)"
+
+      - name: Run npm smoke test
+        shell: bash
+        run: >
+          bun scripts/smoke-npm-package.ts
+          --tarball "apps/cli/${{ steps.pack.outputs.tarball-filename }}"
+          "${{ needs.verify.outputs.version }}"
+
+      - name: Upload npm tarball
+        uses: actions/upload-artifact@v5
+        with:
+          name: npm-tarball
+          path: apps/cli/${{ steps.pack.outputs.tarball-filename }}
+          if-no-files-found: error
+          retention-days: 7
+
+  npm-smoke:
+    needs: npm-package
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download npm tarball
+        uses: actions/download-artifact@v5
+        with:
+          name: npm-tarball
+          path: npm-tarball
+
+      - name: Smoke test installed tarball
+        shell: bash
+        run: >
+          bun scripts/smoke-npm-package.ts
+          --tarball "npm-tarball/${{ needs.npm-package.outputs.tarball-filename }}"
+          "${{ needs.verify.outputs.version }}"
+
+  npm-publish:
+    needs:
+      - verify
+      - npm-package
+      - npm-smoke
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download npm tarball
+        uses: actions/download-artifact@v5
+        with:
+          name: npm-tarball
+          path: npm-tarball
+
+      - name: Check npm registry
+        id: check
+        shell: bash
+        env:
+          BASE_VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://registry.npmjs.org/vcontext/${BASE_VERSION}")
+          if [ "$STATUS" = "200" ]; then
+            echo "VERSION_EXISTS=true" >> "$GITHUB_ENV"
+            echo "vcontext@${BASE_VERSION} already published — skipping"
+          else
+            echo "VERSION_EXISTS=false" >> "$GITHUB_ENV"
+            echo "vcontext@${BASE_VERSION} not found — will publish"
+          fi
+
+      - name: Set up Node.js
+        if: env.VERSION_EXISTS == 'false'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Publish to npm
+        if: env.VERSION_EXISTS == 'false'
+        shell: bash
+        env:
+          BASE_VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          TARBALL=$(ls npm-tarball/*.tgz 2>/dev/null | head -1)
+          if [ -z "$TARBALL" ]; then
+            echo "No .tgz file found in npm-tarball/"
+            exit 1
+          fi
+          npm publish "$TARBALL" --access public --provenance
+          echo "Published vcontext@${BASE_VERSION}"
 
   publish:
     needs:

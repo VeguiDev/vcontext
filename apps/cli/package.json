@@ -39,6 +39,9 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
+    "build:npm": "bun ../../scripts/build-npm-package.ts",
+    "pack:npm": "npm pack",
+    "smoke:npm": "bun ../../scripts/smoke-npm-package.ts",
     "test": "pnpm --dir ../.. exec turbo run build --filter=vcontext... --filter=@app/deamon... && node -e \"require('node:fs').accessSync('dist/test/cli-vcontext-api.test.js')\" && node --test \"dist/test/*.test.js\"",
     "start": "node dist/src/index.js",
     "lint": "prettier --check src/**/*.ts test/**/*.ts",

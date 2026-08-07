@@ -59,3 +59,31 @@ npm install -g vcontext@latest
 - **Standalone binary** (install.sh/install.ps1): Self-contained native executable.
 
 Choose one installation channel and stick with it. Mixing channels may cause unexpected behavior.
+
+## Maintainer: First npm Publication
+
+The npm package uses trusted publishing (provenance) for subsequent releases,
+but the very first version must be published manually by an owner:
+
+1. Build the tarball locally:
+   ```bash
+   pnpm install --frozen-lockfile
+   cd apps/cli
+   pnpm run build:npm
+   npm pack
+   ```
+
+2. Publish the tarball with 2FA:
+   ```bash
+   npm publish vcontext-<version>.tgz --access public --otp <code>
+   ```
+
+3. After the package exists at `https://www.npmjs.com/package/vcontext`,
+   configure trusted publishing in the npm package settings:
+   - **Publisher**: `VeguiDev/vcontext`
+   - **Workflow**: `release.yml`
+   - **Environment**: (optional, for deployment protection rules)
+
+   Once configured, CI can publish via `npm publish <tgz> --access public
+   --provenance` without a token. The release workflow automatically skips
+   already-published versions.

@@ -328,7 +328,11 @@ export class CliUi {
     }
   }
 
-  updateAvailable(currentVersion: string, latestVersion: string): void {
+  updateAvailable(
+    currentVersion: string,
+    latestVersion: string,
+    updateHint?: string,
+  ): void {
     if (!this.rich) return;
     const content = `${this.dim(currentVersion)} ${this.brand("→")} ${this.brand(latestVersion)}`;
     this.errorLine();
@@ -343,9 +347,13 @@ export class CliUi {
       }),
     );
     this.errorLine();
-    this.errorLine(
-      `${this.brand("❯")} Run ${this.command(this.cli("update"))}`,
-    );
+    if (updateHint) {
+      this.errorLine(`${this.brand("❯")} ${updateHint}`);
+    } else {
+      this.errorLine(
+        `${this.brand("❯")} Run ${this.command(this.cli("update"))}`,
+      );
+    }
   }
 
   updateResult(

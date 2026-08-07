@@ -18,6 +18,9 @@ import {
   runningPid,
 } from "@repo/vcontext-core";
 
+/** Bun.build define — inlined at build time; undefined in source/tsc mode. */
+declare var VCONTEXT_DISTRIBUTION_BUILD: string | undefined;
+
 export interface CliResponse {
   status: number;
   headers: http.IncomingHttpHeaders;
@@ -165,10 +168,35 @@ export function rawRequest(
 }
 
 export function daemonEntry(): string {
+  // 1. Env override — highest priority
+  const envEntry = process.env.VCONTEXT_DAEMON_ENTRY;
+  if (envEntry) {
+    return envEntry;
+  }
+
+  // 2. Distribution-specific resolution
+  // VCONTEXT_DISTRIBUTION_BUILD is a Bun.build define inlined at build time.
+  // In source/tsc mode it is undefined; in npm bundled output it is "npm".
+  if (
+    typeof VCONTEXT_DISTRIBUTION_BUILD !== "undefined" &&
+    VCONTEXT_DISTRIBUTION_BUILD === "npm"
+  ) {
+    const npmDaemon = path.resolve(
+      path.dirname(process.argv[1]),
+      "vcontext-daemon.mjs",
+    );
+    if (fs.existsSync(npmDaemon)) {
+      return npmDaemon;
+    }
+    throw new DaemonClientError(
+      "Daemon binary not found in npm package. Reinstall or set VCONTEXT_DAEMON_ENTRY to the daemon path.",
+    );
+  }
+
+  // 3. Source/development monorepo paths
   const currentFile = fileURLToPath(import.meta.url);
   const currentDir = path.dirname(currentFile);
   const candidates = [
-    process.env.VCONTEXT_DAEMON_ENTRY,
     path.resolve(
       currentDir,
       "..",
