@@ -10,7 +10,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "@repo/vcontext-core": "workspace:^",
     "zod": "^4.4.3"
   },
